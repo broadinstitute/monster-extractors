@@ -45,7 +45,7 @@ class XmlExtractor private[xml] (
       eventsAccumulated: Chain[XMLEvent]
     ): Pull[IO, Chain[XMLEvent], Unit] = {
       xmlEventStream.pull.uncons1.flatMap {
-        case None => Pull.done
+        case None => Pull.output1(eventsAccumulated)
         case Some((xmlEvent, remainingXmlEvents)) =>
           if (xmlEvent.isEndElement && xmlEvent
                 .asEndElement()

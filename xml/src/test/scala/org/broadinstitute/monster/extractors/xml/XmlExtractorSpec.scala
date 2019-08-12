@@ -27,14 +27,14 @@ class XmlExtractorSpec extends FlatSpec with Matchers {
 
   it should "convert XML to JSON" in {
     val buf = new mutable.ArrayBuffer[(String, GcsObject)]()
-    val in = GcsObject("bucket", "test.xml")
-    val out = GcsObject("bucket2", "test.json")
+    val in = GcsObject("inputs", "test.xml")
+    val out = GcsObject("outputs", "test.json")
 
     extractor(buf).extract(in, out, "Test", 6).unsafeRunSync()
 
     buf should have length 1L
     val (text, actualOut) = buf.head
-    text shouldBe new String(readLocal(in).compile.toChunk.unsafeRunSync().toArray)
+    text shouldBe new String(readLocal(out).compile.toChunk.unsafeRunSync().toArray)
     actualOut shouldBe out
   }
 }

@@ -1,0 +1,6 @@
+{"@TestId":"0001","@TestType":"CMD","Name":"Convert number to string","CommandLine":"Examp1.EXE","Input":1,"Output":"One"}
+{"@TestId":"0002","@TestType":"CMD","Name":"Find succeeding characters","CommandLine":"Examp2.EXE","Input":"abc","Output":"def"}
+{"@TestId":"0003","@TestType":"GUI","Name":"Convert multiple numbers to strings","CommandLine":"Examp2.EXE /Verbose","Input":123,"Output":"One Two Three"}
+{"@TestId":"0004","@TestType":"GUI","Name":"Find correlated key","CommandLine":"Examp3.EXE","Input":"a1","Output":"b1"}
+{"@TestId":"0005","@TestType":"GUI","Name":"Count characters","CommandLine":"FinalExamp.EXE","Input":"This is a test","Output":14}
+{"@TestId":"0006","@TestType":"GUI","Name":"Another Test","CommandLine":"Examp2.EXE","Input":"Test Input","Output":10}
