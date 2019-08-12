@@ -3,10 +3,7 @@ package org.broadinstitute.monster.extractors.xml
 import better.files.File
 import cats.data.Chain
 import cats.effect.{ContextShift, IO}
-import org.broadinstitute.monster.storage.gcs.GcsApi
-import fs2.{Pull, Stream}
-import org.http4s.{Charset, MediaType}
-import org.http4s.headers.`Content-Type`
+import fs2.{Pipe, Pull, Stream}
 import de.odysseus.staxon.json.{JsonXMLConfigBuilder, JsonXMLOutputFactory}
 import javax.xml.stream.XMLInputFactory._
 import javax.xml.stream.events.XMLEvent
@@ -14,39 +11,29 @@ import cats.implicits._
 
 import scala.collection.Iterator
 
-class XmlExtractor(api: GcsApi)(implicit context: ContextShift[IO]) {
+class XmlExtractor private[xml] (
+  getXml: XmlExtractor.GcsObject => Stream[IO, Byte],
+  writeJson: (File, XmlExtractor.GcsObject) => IO[Unit]
+)(implicit context: ContextShift[IO]) {
+  import XmlExtractor.GcsObject
 
-  def createJson(
+  def extract(
+    input: GcsObject,
+    output: GcsObject,
     xmlTag: String,
-    tagsPerFile: Long,
-    inputBucket: String,
-    inputPath: String,
-    outputBucket: String,
-    outputPath: String
+    tagsPerFile: Long
   ): IO[Unit] = {
-    val xml = api.readObject(inputBucket, inputPath, 0L)
-    xmlToJson(xml, xmlTag, tagsPerFile).evalMap { jsonFile =>
-      IO.pure(jsonFile)
-        .bracket(
-          file =>
-            api.createObject(
-              outputBucket,
-              outputPath,
-              `Content-Type`(MediaType.application.json, Charset.`UTF-8`),
-              None,
-              Stream.emits(file.byteArray).covary[IO]
-            )
-        ) { file =>
-          IO.delay(file.delete())
-        }
+    getXml(input).through(xmlToJson(xmlTag, tagsPerFile)).evalMap { jsonFile =>
+      IO.pure(jsonFile).bracket(writeJson(_, output)) { file =>
+        IO.delay(file.delete())
+      }
     }
   }.compile.drain
 
   private def xmlToJson(
-    xml: Stream[IO, Byte],
     xmlTag: String,
     tagsPerFile: Long
-  ): Stream[IO, File] = {
+  ): Pipe[IO, Byte, File] = { xml =>
     val jsonXMLConfig = new JsonXMLConfigBuilder()
       .autoArray(true)
       .autoPrimitive(true)
@@ -109,4 +96,8 @@ class XmlExtractor(api: GcsApi)(implicit context: ContextShift[IO]) {
       }
     }
   }
+}
+
+object XmlExtractor {
+  case class GcsObject(bucket: String, path: String)
 }
