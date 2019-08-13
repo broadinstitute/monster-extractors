@@ -39,7 +39,7 @@ class XmlExtractor private[xml] (
       .autoPrimitive(true)
       .build()
 
-    def xmlEventToFile(
+    def chunkXmlTags(
       xmlEventStream: Stream[IO, XMLEvent],
       numberTagsAccumulated: Long,
       eventsAccumulated: Chain[XMLEvent]
@@ -47,26 +47,31 @@ class XmlExtractor private[xml] (
       xmlEventStream.pull.uncons1.flatMap {
         case None => Pull.output1(eventsAccumulated)
         case Some((xmlEvent, remainingXmlEvents)) =>
+          val newEvents = eventsAccumulated.append(xmlEvent)
+
           if (xmlEvent.isEndElement && xmlEvent
                 .asEndElement()
                 .getName
                 .getLocalPart == xmlTag) {
-            if (numberTagsAccumulated == tagsPerFile) {
-              Pull.output1(eventsAccumulated.append(xmlEvent)).flatMap { _ =>
-                xmlEventToFile(remainingXmlEvents, 0, Chain.empty)
+
+            val newCount = numberTagsAccumulated
+
+            if (newCount == tagsPerFile) {
+              Pull.output1(newEvents).flatMap { _ =>
+                chunkXmlTags(remainingXmlEvents, 0, Chain.empty)
               }
             } else {
-              xmlEventToFile(
+              chunkXmlTags(
                 remainingXmlEvents,
-                numberTagsAccumulated + 1,
-                eventsAccumulated.append(xmlEvent)
+                newCount,
+                newEvents
               )
             }
           } else {
-            xmlEventToFile(
+            chunkXmlTags(
               remainingXmlEvents,
               numberTagsAccumulated,
-              eventsAccumulated.append(xmlEvent)
+              newEvents
             )
           }
       }
@@ -80,7 +85,7 @@ class XmlExtractor private[xml] (
       })
     }
 
-    xmlEventToFile(xmlEventStream, 0, Chain.empty).stream.evalMap { xmlEvents =>
+    chunkXmlTags(xmlEventStream, 0, Chain.empty).stream.evalMap { xmlEvents =>
       IO.delay(File.newTemporaryFile()).flatMap { file =>
         IO.delay {
           new JsonXMLOutputFactory(jsonXMLConfig)
