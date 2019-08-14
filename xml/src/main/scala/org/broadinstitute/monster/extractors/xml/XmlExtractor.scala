@@ -50,7 +50,6 @@ class XmlExtractor private[xml] (
                 .asEndElement()
                 .getName
                 .getLocalPart == xmlTag) {
-            System.err.println(s"Leaving tag: $xmlEvent")
             Pull.output1(eventsAccumulated.append(xmlEvent)).flatMap { _ =>
               groupXmlTags(remainingXmlEvents, Chain.empty, inTag = false)
             }
@@ -58,10 +57,8 @@ class XmlExtractor private[xml] (
                        .asStartElement()
                        .getName
                        .getLocalPart == xmlTag) {
-            System.err.println(s"In tag: $xmlEvent")
             groupXmlTags(xmlEventStream, eventsAccumulated.append(xmlEvent), inTag = true)
           } else {
-            System.err.println(s"Not in tag: $xmlEvent")
             groupXmlTags(remainingXmlEvents, eventsAccumulated, inTag)
           }
       }
