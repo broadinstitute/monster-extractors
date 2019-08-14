@@ -21,7 +21,7 @@ class XmlExtractor private[xml] (
     input: GcsObject,
     output: GcsObject,
     xmlTag: String,
-    tagsPerFile: Long
+    tagsPerFile: Int
   ): IO[Unit] = {
     getXml(input).through(xmlToJson(xmlTag, tagsPerFile)).evalMap { jsonFile =>
       IO.pure(jsonFile).bracket(writeJson(_, output)) { file =>
@@ -30,49 +30,37 @@ class XmlExtractor private[xml] (
     }
   }.compile.drain
 
-  private def xmlToJson(
-    xmlTag: String,
-    tagsPerFile: Long
-  ): Pipe[IO, Byte, File] = { xml =>
+  private def xmlToJson(xmlTag: String, tagsPerFile: Int): Pipe[IO, Byte, File] = { xml =>
     val jsonXMLConfig = new JsonXMLConfigBuilder()
       .autoArray(true)
       .autoPrimitive(true)
+      .repairingNamespaces(true)
+      .virtualRoot(xmlTag)
       .build()
 
-    def chunkXmlTags(
+    def groupXmlTags(
       xmlEventStream: Stream[IO, XMLEvent],
-      numberTagsAccumulated: Long,
-      eventsAccumulated: Chain[XMLEvent]
+      eventsAccumulated: Chain[XMLEvent],
+      inTag: Boolean
     ): Pull[IO, Chain[XMLEvent], Unit] = {
       xmlEventStream.pull.uncons1.flatMap {
         case None => Pull.output1(eventsAccumulated)
         case Some((xmlEvent, remainingXmlEvents)) =>
-          val newEvents = eventsAccumulated.append(xmlEvent)
-
-          if (xmlEvent.isEndElement && xmlEvent
-                .asEndElement()
+          if (inTag || xmlEvent.isStartElement && xmlEvent
+                .asStartElement()
                 .getName
                 .getLocalPart == xmlTag) {
+            groupXmlTags(xmlEventStream, eventsAccumulated.append(xmlEvent), inTag = true)
+          } else if (xmlEvent.isEndElement && xmlEvent
+                       .asEndElement()
+                       .getName
+                       .getLocalPart == xmlTag) {
 
-            val newCount = numberTagsAccumulated
-
-            if (newCount == tagsPerFile) {
-              Pull.output1(newEvents).flatMap { _ =>
-                chunkXmlTags(remainingXmlEvents, 0, Chain.empty)
-              }
-            } else {
-              chunkXmlTags(
-                remainingXmlEvents,
-                newCount,
-                newEvents
-              )
+            Pull.output1(eventsAccumulated.append(xmlEvent)).flatMap { _ =>
+              groupXmlTags(remainingXmlEvents, Chain.empty, inTag = false)
             }
           } else {
-            chunkXmlTags(
-              remainingXmlEvents,
-              numberTagsAccumulated,
-              newEvents
-            )
+            groupXmlTags(remainingXmlEvents, eventsAccumulated, inTag)
           }
       }
     }
@@ -85,21 +73,24 @@ class XmlExtractor private[xml] (
       })
     }
 
-    chunkXmlTags(xmlEventStream, 0, Chain.empty).stream.evalMap { xmlEvents =>
-      IO.delay(File.newTemporaryFile()).flatMap { file =>
-        IO.delay {
-          new JsonXMLOutputFactory(jsonXMLConfig)
-            .createXMLEventWriter(file.newOutputStream)
-        }.bracket { writer =>
-          xmlEvents.traverse { xmlEvent =>
-            IO.delay(writer.add(xmlEvent))
+    groupXmlTags(xmlEventStream, Chain.empty, inTag = false).stream
+      .chunkN(tagsPerFile)
+      .evalMap { xmlChunk =>
+        IO.delay(File.newTemporaryFile()).flatMap { file =>
+          xmlChunk.traverse { xmlEvents =>
+            IO.delay {
+              new JsonXMLOutputFactory(jsonXMLConfig)
+                .createXMLEventWriter(file.newOutputStream)
+            }.bracket { writer =>
+              xmlEvents.traverse { xmlEvent =>
+                IO.delay(writer.add(xmlEvent))
+              }
+            } { writer =>
+              IO.delay(writer.close())
+            }
           }.as(file)
-        } { writer =>
-          IO.delay(writer.close())
         }
-
       }
-    }
   }
 }
 
