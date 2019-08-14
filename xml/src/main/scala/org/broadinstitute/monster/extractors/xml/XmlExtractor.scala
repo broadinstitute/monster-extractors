@@ -44,22 +44,24 @@ class XmlExtractor private[xml] (
       inTag: Boolean
     ): Pull[IO, Chain[XMLEvent], Unit] = {
       xmlEventStream.pull.uncons1.flatMap {
-        case None => Pull.output1(eventsAccumulated)
+        case None => Pull.done
         case Some((xmlEvent, remainingXmlEvents)) =>
           if (inTag || xmlEvent.isStartElement && xmlEvent
                 .asStartElement()
                 .getName
                 .getLocalPart == xmlTag) {
+            System.err.println(s"In tag: $xmlEvent")
             groupXmlTags(xmlEventStream, eventsAccumulated.append(xmlEvent), inTag = true)
           } else if (xmlEvent.isEndElement && xmlEvent
                        .asEndElement()
                        .getName
                        .getLocalPart == xmlTag) {
-
+            System.err.println(s"Leaving tag: $xmlEvent")
             Pull.output1(eventsAccumulated.append(xmlEvent)).flatMap { _ =>
               groupXmlTags(remainingXmlEvents, Chain.empty, inTag = false)
             }
           } else {
+            System.err.println(s"Not in tag: $xmlEvent")
             groupXmlTags(remainingXmlEvents, eventsAccumulated, inTag)
           }
       }
