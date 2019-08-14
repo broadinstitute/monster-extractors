@@ -46,20 +46,20 @@ class XmlExtractor private[xml] (
       xmlEventStream.pull.uncons1.flatMap {
         case None => Pull.done
         case Some((xmlEvent, remainingXmlEvents)) =>
-          if (inTag || xmlEvent.isStartElement && xmlEvent
-                .asStartElement()
+          if (xmlEvent.isEndElement && xmlEvent
+                .asEndElement()
                 .getName
                 .getLocalPart == xmlTag) {
-            System.err.println(s"In tag: $xmlEvent")
-            groupXmlTags(xmlEventStream, eventsAccumulated.append(xmlEvent), inTag = true)
-          } else if (xmlEvent.isEndElement && xmlEvent
-                       .asEndElement()
-                       .getName
-                       .getLocalPart == xmlTag) {
             System.err.println(s"Leaving tag: $xmlEvent")
             Pull.output1(eventsAccumulated.append(xmlEvent)).flatMap { _ =>
               groupXmlTags(remainingXmlEvents, Chain.empty, inTag = false)
             }
+          } else if (inTag || xmlEvent.isStartElement && xmlEvent
+                       .asStartElement()
+                       .getName
+                       .getLocalPart == xmlTag) {
+            System.err.println(s"In tag: $xmlEvent")
+            groupXmlTags(xmlEventStream, eventsAccumulated.append(xmlEvent), inTag = true)
           } else {
             System.err.println(s"Not in tag: $xmlEvent")
             groupXmlTags(remainingXmlEvents, eventsAccumulated, inTag)
@@ -82,7 +82,7 @@ class XmlExtractor private[xml] (
           xmlChunk.traverse { xmlEvents =>
             IO.delay {
               new JsonXMLOutputFactory(jsonXMLConfig)
-                .createXMLEventWriter(file.newOutputStream)
+                .createXMLEventWriter(file.newOutputStream(File.OpenOptions.append))
             }.bracket { writer =>
               xmlEvents.traverse { xmlEvent =>
                 IO.delay(writer.add(xmlEvent))
