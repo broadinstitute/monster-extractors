@@ -81,7 +81,7 @@ class XmlExtractor private[xml] (
               new JsonXMLOutputFactory(jsonXMLConfig)
                 .createXMLEventWriter(file.newOutputStream(File.OpenOptions.append))
             }.bracket { writer =>
-              xmlEvents.traverse { xmlEvent =>
+              xmlEvents.traverse_ { xmlEvent =>
                 IO.delay(writer.add(xmlEvent))
               }
             } { writer =>
