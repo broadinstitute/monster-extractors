@@ -76,18 +76,28 @@ class XmlExtractor private[xml] (
       .chunkN(tagsPerFile)
       .evalMap { xmlChunk =>
         IO.delay(File.newTemporaryFile()).flatMap { file =>
-          xmlChunk.traverse { xmlEvents =>
-            IO.delay {
-              new JsonXMLOutputFactory(jsonXMLConfig)
-                .createXMLEventWriter(file.newOutputStream(File.OpenOptions.append))
-            }.bracket { writer =>
-              xmlEvents.traverse_ { xmlEvent =>
-                IO.delay(writer.add(xmlEvent))
-              }
-            } { writer =>
-              IO.delay(writer.close())
+          IO.delay(file.newOutputStream)
+            .bracket { outputStream =>
+              xmlChunk.traverse { xmlEvents =>
+                IO.delay {
+                  new JsonXMLOutputFactory(jsonXMLConfig)
+                    .createXMLEventWriter(outputStream)
+                }.bracket { writer =>
+                  xmlEvents.traverse_ { xmlEvent =>
+                    IO.delay {
+                      writer.add(xmlEvent)
+                    }
+                  }
+                } { writer =>
+                  IO.delay {
+                    writer.close()
+                    outputStream.write('\n')
+                  }
+                }
+              }.as(file)
+            } { outputStream =>
+              IO.delay(outputStream.close())
             }
-          }.as(file)
         }
       }
   }
