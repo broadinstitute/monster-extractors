@@ -23,17 +23,13 @@
         <CommandLine>Examp3.EXE</CommandLine>
         <Input>a1</Input>
         <Output>b1</Output>
+        <Nested>
+            <Nested2>
+                <Info>Testing nested layers</Info>
+            </Nested2>
+            <NestedInput>Nested Input</NestedInput>
+            <NestedOutput>Nested Output</NestedOutput>
+        </Nested>
     </Test>
-    <Test TestId="0005" TestType="GUI">
-        <Name>Count characters</Name>
-        <CommandLine>FinalExamp.EXE</CommandLine>
-        <Input>This is a test</Input>
-        <Output>14</Output>
-    </Test>
-    <Test TestId="0006" TestType="GUI">
-        <Name>Another Test</Name>
-        <CommandLine>Examp2.EXE</CommandLine>
-        <Input>Test Input</Input>
-        <Output>10</Output>
-    </Test>
+
 </Tests>
