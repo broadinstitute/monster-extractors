@@ -2,7 +2,7 @@ package org.broadinstitute.monster.extractors.xml
 
 import better.files.File
 import cats.data.Chain
-import cats.effect.{ContextShift, IO}
+import cats.effect.{ContextShift, IO, Resource}
 import fs2.{Pipe, Pull, Stream}
 import de.odysseus.staxon.json.{JsonXMLConfigBuilder, JsonXMLOutputFactory}
 import javax.xml.stream.XMLInputFactory._
@@ -68,6 +68,7 @@ class XmlExtractor private[xml] (
       val reader = newInstance().createXMLEventReader(inputStream)
       Stream.fromIterator[IO, XMLEvent](new Iterator[XMLEvent] {
         override def hasNext: Boolean = reader.hasNext
+
         override def next(): XMLEvent = reader.nextEvent()
       })
     }
@@ -76,28 +77,32 @@ class XmlExtractor private[xml] (
       .chunkN(tagsPerFile)
       .evalMap { xmlChunk =>
         IO.delay(File.newTemporaryFile()).flatMap { file =>
-          IO.delay(file.newOutputStream)
-            .bracket { outputStream =>
-              xmlChunk.traverse { xmlEvents =>
+          Resource.make {
+            IO.delay(file.newOutputStream)
+          } { outputStream =>
+            IO.delay(outputStream.close())
+          }.use { outputStream =>
+            xmlChunk.traverse { xmlEvents =>
+              Resource.make {
                 IO.delay {
                   new JsonXMLOutputFactory(jsonXMLConfig)
                     .createXMLEventWriter(outputStream)
-                }.bracket { writer =>
-                  xmlEvents.traverse_ { xmlEvent =>
-                    IO.delay {
-                      writer.add(xmlEvent)
-                    }
-                  }
-                } { writer =>
+                }
+              } { writer =>
+                IO.delay {
+                  writer.close()
+                }
+              }.use { writer =>
+                xmlEvents.traverse_ { xmlEvent =>
                   IO.delay {
-                    writer.close()
-                    outputStream.write('\n')
+                    writer.add(xmlEvent)
                   }
                 }
-              }.as(file)
-            } { outputStream =>
-              IO.delay(outputStream.close())
-            }
+              }.flatMap { _ =>
+                IO.delay(outputStream.write('\n'))
+              }
+            }.as(file)
+          }
         }
       }
   }
