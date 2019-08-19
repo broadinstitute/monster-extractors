@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<Tests xmlns="http://www.adatum.com">
+    <Test id="1">
+        <name>Minimal XML</name>
+    </Test>
+</Tests>
