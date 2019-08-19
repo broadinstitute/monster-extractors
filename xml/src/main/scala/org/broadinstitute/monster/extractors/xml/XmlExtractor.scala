@@ -11,6 +11,19 @@ import cats.implicits._
 
 import scala.collection.Iterator
 
+/**
+  * Utility which can mechanically convert a stream of XML to a stream of chunked JSON-list files.
+  *
+  * JSON-list files are temporarily stored on local disk in case the mechanism which writes
+  * the data to its final storage space needs to know the total size of the file.
+  *
+  * @tparam Path type describing a location in the storage system where XML is hosted /
+  *              JSON-list should be written
+  *
+  * @param getXml function which can produce a stream of XML from a location in storage
+  * @param writeJson function which can copy a local temp file containing JSON-list data
+  *                  to an external storage system
+  */
 class XmlExtractor[Path] private[xml] (
   getXml: Path => Stream[IO, Byte],
   writeJson: (File, Long, Path) => IO[Unit]
