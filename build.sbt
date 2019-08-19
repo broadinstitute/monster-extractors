@@ -42,6 +42,7 @@ val betterMonadicForVersion = "0.3.1"
 val betterFilesVersion = "3.8.0"
 val declineVersion = "0.7.0-M0"
 val gcsLibVersion = "0.1.0"
+val log4CatsVersion = "0.3.0"
 val staxonVersion = "1.3"
 
 // Testing.
@@ -80,9 +81,10 @@ lazy val xml = project
   .settings(
     // Main code.
     libraryDependencies ++= Seq(
-      "org.broadinstitute.monster" %% "gcs-lib" % gcsLibVersion,
+      "com.github.pathikrit" %% "better-files" % betterFilesVersion,
       "de.odysseus.staxon" % "staxon" % staxonVersion,
-      "com.github.pathikrit" %% "better-files" % betterFilesVersion
+      "io.chrisdavenport" %% "log4cats-slf4j" % log4CatsVersion,
+      "org.broadinstitute.monster" %% "gcs-lib" % gcsLibVersion
     ),
     // All tests.
     libraryDependencies ++= Seq(

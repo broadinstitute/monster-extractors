@@ -47,7 +47,8 @@ object ExtractorClp
     val outputOpt = Opts
       .option[File](
         "output",
-        "Path to the local directory where extracted JSON should be written.",
+        "Path to the local directory where extracted JSON should be written. " +
+          "Will raise an error if pointed to an existing non-directory.",
         short = "o"
       )
       .validate("Output is not a directory") { out =>
@@ -79,8 +80,8 @@ object ExtractorClp
         blockingEc.use { ec =>
           val extractor = {
             val readPath = (inFile: File) => {
-              val base = fs2.io.file.readAll[IO](inFile.path, ec, 8196)
-              if (gunzip) base.through(fs2.compress.gunzip(2 * 8196)) else base
+              val base = fs2.io.file.readAll[IO](inFile.path, ec, 8192)
+              if (gunzip) base.through(fs2.compress.gunzip(2 * 8192)) else base
             }
 
             val writePath = (tmp: File, partNumber: Long, outPrefix: File) => {

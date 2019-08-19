@@ -8,6 +8,7 @@ import de.odysseus.staxon.json.{JsonXMLConfigBuilder, JsonXMLOutputFactory}
 import javax.xml.stream.XMLInputFactory._
 import javax.xml.stream.events.XMLEvent
 import cats.implicits._
+import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 
 import scala.collection.Iterator
 
@@ -29,12 +30,21 @@ class XmlExtractor[Path] private[xml] (
   writeJson: (File, Long, Path) => IO[Unit]
 )(implicit context: ContextShift[IO]) {
 
+  private val log = Slf4jLogger.getLogger[IO]
+
   def extract(input: Path, output: Path, xmlTag: String, tagsPerFile: Int): IO[Unit] = {
     getXml(input).through(xmlToJson(xmlTag, tagsPerFile)).zipWithIndex.evalMap {
       case (jsonFile, partNumber) =>
-        writeJson(jsonFile, partNumber, output).guarantee(IO.delay(jsonFile.delete()))
+        log
+          .info(s"Writing part #$partNumber to $output...")
+          .flatMap { _ =>
+            writeJson(jsonFile, partNumber, output).guarantee(IO.delay(jsonFile.delete()))
+          }
+          .as(partNumber + 1)
     }
-  }.compile.drain
+  }.compile.lastOrError.flatMap { numParts =>
+    log.info(s"Wrote $numParts parts to $output")
+  }
 
   private def xmlToJson(xmlTag: String, tagsPerFile: Int): Pipe[IO, Byte, File] = { xml =>
     val jsonXMLConfig = new JsonXMLConfigBuilder()
@@ -65,6 +75,7 @@ class XmlExtractor[Path] private[xml] (
                        .getLocalPart == xmlTag) {
             groupXmlTags(xmlEventStream, eventsAccumulated.append(xmlEvent), inTag = true)
           } else {
+
             groupXmlTags(remainingXmlEvents, eventsAccumulated, inTag)
           }
       }
