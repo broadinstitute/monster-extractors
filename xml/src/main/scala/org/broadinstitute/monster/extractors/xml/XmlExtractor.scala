@@ -33,7 +33,7 @@ class XmlExtractor private[xml] (
   private def xmlToJson(xmlTag: String, tagsPerFile: Int): Pipe[IO, Byte, File] = { xml =>
     val jsonXMLConfig = new JsonXMLConfigBuilder()
       .autoArray(true)
-      .autoPrimitive(true)
+      .autoPrimitive(false)
       .repairingNamespaces(true)
       .virtualRoot(xmlTag)
       .build()
