@@ -11,22 +11,15 @@ import cats.implicits._
 
 import scala.collection.Iterator
 
-class XmlExtractor private[xml] (
-  getXml: XmlExtractor.GcsObject => Stream[IO, Byte],
-  writeJson: (File, XmlExtractor.GcsObject) => IO[Unit]
+class XmlExtractor[Path] private[xml] (
+  getXml: Path => Stream[IO, Byte],
+  writeJson: (File, Long, Path) => IO[Unit]
 )(implicit context: ContextShift[IO]) {
-  import XmlExtractor.GcsObject
 
-  def extract(
-    input: GcsObject,
-    output: GcsObject,
-    xmlTag: String,
-    tagsPerFile: Int
-  ): IO[Unit] = {
-    getXml(input).through(xmlToJson(xmlTag, tagsPerFile)).evalMap { jsonFile =>
-      IO.pure(jsonFile).bracket(writeJson(_, output)) { file =>
-        IO.delay(file.delete())
-      }
+  def extract(input: Path, output: Path, xmlTag: String, tagsPerFile: Int): IO[Unit] = {
+    getXml(input).through(xmlToJson(xmlTag, tagsPerFile)).zipWithIndex.evalMap {
+      case (jsonFile, partNumber) =>
+        writeJson(jsonFile, partNumber, output).guarantee(IO.delay(jsonFile.delete()))
     }
   }.compile.drain
 
@@ -68,7 +61,6 @@ class XmlExtractor private[xml] (
       val reader = newInstance().createXMLEventReader(inputStream)
       Stream.fromIterator[IO, XMLEvent](new Iterator[XMLEvent] {
         override def hasNext: Boolean = reader.hasNext
-
         override def next(): XMLEvent = reader.nextEvent()
       })
     }
@@ -106,8 +98,4 @@ class XmlExtractor private[xml] (
         }
       }
   }
-}
-
-object XmlExtractor {
-  case class GcsObject(bucket: String, path: String)
 }
