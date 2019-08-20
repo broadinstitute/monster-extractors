@@ -8,32 +8,48 @@ import de.odysseus.staxon.json.{JsonXMLConfigBuilder, JsonXMLOutputFactory}
 import javax.xml.stream.XMLInputFactory._
 import javax.xml.stream.events.XMLEvent
 import cats.implicits._
+import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 
 import scala.collection.Iterator
 
-class XmlExtractor private[xml] (
-  getXml: XmlExtractor.GcsObject => Stream[IO, Byte],
-  writeJson: (File, XmlExtractor.GcsObject) => IO[Unit]
+/**
+  * Utility which can mechanically convert a stream of XML to a stream of chunked JSON-list files.
+  *
+  * JSON-list files are temporarily stored on local disk in case the mechanism which writes
+  * the data to its final storage space needs to know the total size of the file.
+  *
+  * @tparam Path type describing a location in the storage system where XML is hosted /
+  *              JSON-list should be written
+  *
+  * @param getXml function which can produce a stream of XML from a location in storage
+  * @param writeJson function which can copy a local temp file containing JSON-list data
+  *                  to an external storage system
+  */
+class XmlExtractor[Path] private[xml] (
+  getXml: Path => Stream[IO, Byte],
+  writeJson: (File, Long, Path) => IO[Unit]
 )(implicit context: ContextShift[IO]) {
-  import XmlExtractor.GcsObject
 
-  def extract(
-    input: GcsObject,
-    output: GcsObject,
-    xmlTag: String,
-    tagsPerFile: Int
-  ): IO[Unit] = {
-    getXml(input).through(xmlToJson(xmlTag, tagsPerFile)).evalMap { jsonFile =>
-      IO.pure(jsonFile).bracket(writeJson(_, output)) { file =>
-        IO.delay(file.delete())
-      }
+  private val log = Slf4jLogger.getLogger[IO]
+
+  def extract(input: Path, output: Path, xmlTag: String, tagsPerFile: Int): IO[Unit] = {
+    getXml(input).through(xmlToJson(xmlTag, tagsPerFile)).zipWithIndex.evalMap {
+      case (jsonFile, partNumber) =>
+        log
+          .info(s"Writing part #$partNumber to $output...")
+          .flatMap { _ =>
+            writeJson(jsonFile, partNumber, output).guarantee(IO.delay(jsonFile.delete()))
+          }
+          .as(partNumber + 1)
     }
-  }.compile.drain
+  }.compile.lastOrError.flatMap { numParts =>
+    log.info(s"Wrote $numParts parts to $output")
+  }
 
   private def xmlToJson(xmlTag: String, tagsPerFile: Int): Pipe[IO, Byte, File] = { xml =>
     val jsonXMLConfig = new JsonXMLConfigBuilder()
       .autoArray(true)
-      .autoPrimitive(true)
+      .autoPrimitive(false)
       .repairingNamespaces(true)
       .virtualRoot(xmlTag)
       .build()
@@ -59,6 +75,7 @@ class XmlExtractor private[xml] (
                        .getLocalPart == xmlTag) {
             groupXmlTags(xmlEventStream, eventsAccumulated.append(xmlEvent), inTag = true)
           } else {
+
             groupXmlTags(remainingXmlEvents, eventsAccumulated, inTag)
           }
       }
@@ -68,7 +85,6 @@ class XmlExtractor private[xml] (
       val reader = newInstance().createXMLEventReader(inputStream)
       Stream.fromIterator[IO, XMLEvent](new Iterator[XMLEvent] {
         override def hasNext: Boolean = reader.hasNext
-
         override def next(): XMLEvent = reader.nextEvent()
       })
     }
@@ -106,8 +122,4 @@ class XmlExtractor private[xml] (
         }
       }
   }
-}
-
-object XmlExtractor {
-  case class GcsObject(bucket: String, path: String)
 }

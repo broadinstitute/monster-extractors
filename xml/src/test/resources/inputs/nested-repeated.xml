@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<Tests xmlns="http://www.adatum.com">
+    <Test TestId="0004" TestType="GUI">
+        <Nested>
+            <Nested2>
+                <Info>Testing nested layers</Info>
+            </Nested2>
+            <NestedInput>Nested Input</NestedInput>
+            <NestedOutput>Nested Output</NestedOutput>
+        </Nested>
+
+        <Nested>
+            <Nested2>
+                <Info>Testing nested repeated layers</Info>
+            </Nested2>
+            <Nested2>
+                <Info>All the layers of nested-repeated!</Info>
+                <Foo>Bar</Foo>
+            </Nested2>
+        </Nested>
+    </Test>
+
+</Tests>

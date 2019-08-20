@@ -40,7 +40,9 @@ inThisBuild(
 val betterMonadicForVersion = "0.3.1"
 
 val betterFilesVersion = "3.8.0"
+val declineVersion = "0.7.0-M0"
 val gcsLibVersion = "0.1.0"
+val log4CatsVersion = "0.3.0"
 val staxonVersion = "1.3"
 
 // Testing.
@@ -70,24 +72,34 @@ val commonSettings = Seq(
 
 lazy val `monster-extractors` = project
   .in(file("."))
-  .aggregate(xml)
+  .aggregate(xml, `xml-clp`)
   .settings(publish / skip := true)
 
 lazy val xml = project
   .in(file("xml"))
-  .configs(IntegrationTest)
-  .enablePlugins(PublishPlugin)
   .settings(commonSettings)
   .settings(
-    Defaults.itSettings,
     // Main code.
     libraryDependencies ++= Seq(
-      "org.broadinstitute.monster" %% "gcs-lib" % gcsLibVersion,
+      "com.github.pathikrit" %% "better-files" % betterFilesVersion,
       "de.odysseus.staxon" % "staxon" % staxonVersion,
-      "com.github.pathikrit" %% "better-files" % betterFilesVersion
+      "io.chrisdavenport" %% "log4cats-slf4j" % log4CatsVersion,
+      "org.broadinstitute.monster" %% "gcs-lib" % gcsLibVersion
     ),
     // All tests.
     libraryDependencies ++= Seq(
       "org.scalatest" %% "scalatest" % scalaTestVersion
-    ).map(_ % s"${Test.name},${IntegrationTest.name}"),
+    ).map(_ % Test),
   )
+
+lazy val `xml-clp` = project
+  .in(file("xml/clp"))
+  .enablePlugins(BuildInfoPlugin)
+  .dependsOn(xml)
+  .settings(
+    libraryDependencies ++= Seq(
+      "com.monovore" %% "decline" % declineVersion,
+      "com.monovore" %% "decline-effect" % declineVersion
+    )
+  )
+
