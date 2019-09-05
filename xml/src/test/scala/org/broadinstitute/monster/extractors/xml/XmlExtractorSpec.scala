@@ -83,4 +83,8 @@ class XmlExtractorSpec extends FlatSpec with Matchers with EitherValues {
     "convert repeated nested tags into arrays",
     "nested-repeated"
   )
+  it should behave like conversionTest(
+    "include root-level attributes in top-level objects",
+    "root-attributes"
+  )
 }
