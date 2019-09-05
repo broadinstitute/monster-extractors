@@ -51,8 +51,11 @@ class XmlExtractor[Path] private[xml] (
             }
             .as(partNumber + 1)
       }
-  }.compile.lastOrError.flatMap { numParts =>
-    log.info(s"Wrote $numParts parts to $output")
+  }.compile.last.flatMap {
+    case None =>
+      log.warn(s"No extractable data found, nothing written to $output")
+    case Some(numParts) =>
+      log.info(s"Wrote $numParts parts to $output")
   }
 
   /**
