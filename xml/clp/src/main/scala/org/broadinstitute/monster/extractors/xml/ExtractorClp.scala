@@ -80,18 +80,20 @@ object ExtractorClp
 
             val writePath = (tmp: File, outSuffix: String, outPrefix: File) => {
               val outFile = outPrefix / outSuffix
-              contextShift.evalOn(ec)(IO.delay(tmp.copyTo(outFile))).void
+              contextShift
+                .evalOn(ec) {
+                  IO.delay {
+                    outFile.parent.createDirectories()
+                    tmp.copyTo(outFile)
+                  }
+                }
+                .void
             }
 
             new XmlExtractor[File](readPath, writePath)
           }
 
-          for {
-            _ <- IO.delay(out.createDirectories())
-            _ <- extractor.extract(in, out, count)
-          } yield {
-            ExitCode.Success
-          }
+          extractor.extract(in, out, count).as(ExitCode.Success)
         }
     }
   }

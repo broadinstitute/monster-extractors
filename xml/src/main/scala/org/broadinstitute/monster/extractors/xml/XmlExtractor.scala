@@ -32,35 +32,53 @@ class XmlExtractor[Path] private[xml] (
   getXml: Path => Stream[IO, Byte],
   writeJson: (File, String, Path) => IO[Unit]
 )(implicit context: ContextShift[IO]) {
-  import XmlExtractor._
+
+  /** Helper used to build modified XML events when needed. */
+  private val EventFactory = new SimpleXMLEventFactory()
 
   private val log = Slf4jLogger.getLogger[IO]
 
-  def extract(input: Path, output: Path, tagsPerFile: Int): IO[Unit] = {
+  private type Tag = Chain[XMLEvent]
+
+  /**
+    * Extract an XML payload into a collection of JSON-list part-files,
+    * batching output JSON according to top-level tag and a max count.
+    *
+    * @param input generic pointer to the input XML payload
+    * @param output generic pointer to the directory / prefix where
+    *               extracted JSON should be written
+    * @param tagsPerFile maximum number of JSON objects to write to
+    *                    each output file
+    */
+  def extract(input: Path, output: Path, tagsPerFile: Int): IO[Unit] =
     getXml(input)
       .through(parseXmlTags)
-      .through(writeXmlAsJson(tagsPerFile))
+      .through(batchTags(tagsPerFile))
+      .through(stageBatches)
       .evalScan(Map.empty[String, Long]) {
         case (partCounts, (tagName, jsonFile)) =>
           val partNumber = partCounts.getOrElse(tagName, 0L) + 1L
           for {
             _ <- log.info(s"Writing part #$partNumber for $tagName to $output...")
-            _ <- writeJson(jsonFile, s"$tagName/part-$partNumber.json", output).guarantee(
-              IO.delay(jsonFile.delete())
-            )
+            _ <- writeJson(jsonFile, s"$tagName/part-$partNumber.json", output)
+              .guarantee(
+                IO.delay(jsonFile.delete())
+              )
           } yield {
             partCounts.updated(tagName, partNumber)
           }
       }
-  }.compile.last.flatMap {
-    case None =>
-      log.warn(s"No extractable data found, nothing written to $output")
-    case Some(finalCounts) =>
-      finalCounts.toList.traverse_ {
-        case (tag, count) =>
-          log.info(s"Wrote $count parts to $output for tag $tag")
+      .compile
+      .last
+      .flatMap {
+        case None =>
+          log.warn(s"No extractable data found, nothing written to $output")
+        case Some(finalCounts) =>
+          finalCounts.toList.traverse_ {
+            case (tag, count) =>
+              log.info(s"Wrote $count parts to $output for tag $tag")
+          }
       }
-  }
 
   /**
     * Build a pipe which will convert a stream of raw bytes into a stream of
@@ -86,7 +104,7 @@ class XmlExtractor[Path] private[xml] (
         case None => Pull.done
         // Begin recursive parsing on the element after the root.
         case Some((rootTag, nestedEvents)) =>
-          groupXmlTags(rootTag.asStartElement(), nestedEvents, Chain.empty, None)
+          collectXmlTags(rootTag.asStartElement(), nestedEvents, Chain.empty, None)
       }
       .stream
   }
@@ -99,9 +117,10 @@ class XmlExtractor[Path] private[xml] (
     * @param xmlEventStream un-chunked XML events
     * @param eventsAccumulated XML tags collected since reading the start of an `xmlTag`,
     *        before reading the corresponding end to the tag
-    * @param currentTag TODO
+    * @param currentTag name of the top-level tag being collected within `eventsAccumulated`,
+    *                   if any
     */
-  private def groupXmlTags(
+  private def collectXmlTags(
     rootTag: StartElement,
     xmlEventStream: Stream[IO, XMLEvent],
     eventsAccumulated: Chain[XMLEvent],
@@ -131,7 +150,7 @@ class XmlExtractor[Path] private[xml] (
               )
 
               // Initialize the accumulator with the new synthetic start, and recur.
-              groupXmlTags(
+              collectXmlTags(
                 rootTag,
                 xmlEventStream,
                 eventsAccumulated.append(combinedElement),
@@ -139,7 +158,7 @@ class XmlExtractor[Path] private[xml] (
               )
             } else {
               // Not within a root-level tag, no point in accumulating the event.
-              groupXmlTags(rootTag, remainingXmlEvents, eventsAccumulated, currentTag)
+              collectXmlTags(rootTag, remainingXmlEvents, eventsAccumulated, currentTag)
             }
 
           // Accumulating events under a tag.
@@ -152,142 +171,145 @@ class XmlExtractor[Path] private[xml] (
               // End of the accumulated tag, push a new chunk out of the stream.
               Pull.output1(newAccumulator).flatMap { _ =>
                 // Recur with an empty accumulator.
-                groupXmlTags(rootTag, remainingXmlEvents, Chain.empty, currentTag = None)
+                collectXmlTags(
+                  rootTag,
+                  remainingXmlEvents,
+                  Chain.empty,
+                  currentTag = None
+                )
               }
             } else {
               // Continue accumulating events.
-              groupXmlTags(rootTag, remainingXmlEvents, newAccumulator, currentTag)
+              collectXmlTags(rootTag, remainingXmlEvents, newAccumulator, currentTag)
             }
         }
     }
 
   /**
-    * Build a pipe which will group individual collections of XML events into batches,
-    * write the batches to temp files as JSON-list, and return pointers to those files.
+    * Build a pipe which will convert a stream of XML tags into batches of tags,
+    * paired with the name of the top-level start element common to every tag in the batch.
     *
-    * @param maxTagsPerFile maximum number of XML tags to write as JSON in a file
+    * @param maxSize max number of tags to include in a single output batch
     */
-  private def writeXmlAsJson(maxTagsPerFile: Int): Pipe[IO, Tag, (String, File)] = {
-    tags =>
-      /*
-       * NOTE: The logic in these two definitions is almost entirely lifted from
-       * the body of `groupAdjacentBy` in fs2's Stream implementation, with:
-       *   1. (Hopeful) readability improvements for our specific case
-       *   2. Some adjustments to account for a max size on the output groups
-       *
-       * https://github.com/functional-streams-for-scala/fs2/issues/1588 tracks
-       * patching the "max size" option back into fs2.
-       */
-      def groupAdjacentByTag(
-        currentGroup: Option[(String, Chunk[Tag])],
-        tagStream: Stream[IO, (String, Tag)]
-      ): Pull[IO, (String, Chunk[Tag]), Unit] =
-        tagStream.pull.uncons.flatMap {
-          case Some((nextChunk, remainingTags)) =>
-            if (nextChunk.nonEmpty) {
-              val (tagName, out) =
-                currentGroup.getOrElse(nextChunk(0)._1 -> Chunk.empty[Tag])
-              rechunk(nextChunk, remainingTags, tagName, List(out), out.size, None)
-            } else {
-              groupAdjacentByTag(currentGroup, remainingTags)
-            }
+  private def batchTags(maxSize: Int): Pipe[IO, Tag, (String, Chunk[Tag])] = { tags =>
+    /*
+     * NOTE: The logic in these two definitions is almost entirely lifted from
+     * the body of `groupAdjacentBy` in fs2's Stream implementation, with:
+     *   1. (Hopeful) readability improvements for our specific case
+     *   2. Some adjustments to account for a max size on the output groups
+     *
+     * https://github.com/functional-streams-for-scala/fs2/issues/1588 tracks
+     * patching the "max size" option back into fs2.
+     */
+    def groupAdjacentByTag(
+      currentGroup: Option[(String, Chunk[Tag])],
+      tagStream: Stream[IO, (String, Tag)]
+    ): Pull[IO, (String, Chunk[Tag]), Unit] =
+      tagStream.pull.uncons.flatMap {
+        case Some((nextChunk, remainingTags)) =>
+          if (nextChunk.nonEmpty) {
+            val (tagName, out) =
+              currentGroup.getOrElse(nextChunk(0)._1 -> Chunk.empty[Tag])
+            rechunk(nextChunk, remainingTags, tagName, List(out), out.size, None)
+          } else {
+            groupAdjacentByTag(currentGroup, remainingTags)
+          }
+        case None =>
+          currentGroup.map(Pull.output1).getOrElse(Pull.done)
+      }
+
+    @tailrec
+    def rechunk(
+      nextChunk: Chunk[(String, Tag)],
+      tagStream: Stream[IO, (String, Tag)],
+      currentTag: String,
+      out: List[Chunk[Tag]],
+      totalSize: Int,
+      acc: Option[Chunk[(String, Chunk[Tag])]]
+    ): Pull[IO, (String, Chunk[Tag]), Unit] = {
+      val chunkSize = nextChunk.size
+      val differsAt = nextChunk.indexWhere(_._1 != currentTag).getOrElse(-1)
+      if (differsAt == -1 && totalSize + chunkSize <= maxSize) {
+        // Whole chunk matches the current key, add this chunk to the accumulated output.
+        val newOut = Chunk.concat((nextChunk.map(_._2) :: out).reverse)
+        acc match {
           case None =>
-            currentGroup.map(Pull.output1).getOrElse(Pull.done)
-        }
-
-      @tailrec
-      def rechunk(
-        nextChunk: Chunk[(String, Tag)],
-        tagStream: Stream[IO, (String, Tag)],
-        currentTag: String,
-        out: List[Chunk[Tag]],
-        totalSize: Int,
-        acc: Option[Chunk[(String, Chunk[Tag])]]
-      ): Pull[IO, (String, Chunk[Tag]), Unit] = {
-        val chunkSize = nextChunk.size
-        val differsAt = nextChunk.indexWhere(_._1 != currentTag).getOrElse(-1)
-        if (differsAt == -1 && totalSize + chunkSize <= maxTagsPerFile) {
-          // Whole chunk matches the current key, add this chunk to the accumulated output.
-          val newOut = Chunk.concat((nextChunk.map(_._2) :: out).reverse)
-          acc match {
-            case None =>
+            groupAdjacentByTag(Some(currentTag -> newOut), tagStream)
+          case Some(acc) =>
+            // Potentially outputs one additional chunk (by splitting the last one in two)
+            Pull.output(acc) >>
               groupAdjacentByTag(Some(currentTag -> newOut), tagStream)
-            case Some(acc) =>
-              // Potentially outputs one additional chunk (by splitting the last one in two)
-              Pull.output(acc) >>
-                groupAdjacentByTag(Some(currentTag -> newOut), tagStream)
-          }
-        } else {
-          val canFillGroup = differsAt == -1 || totalSize + differsAt > maxTagsPerFile
-          val finalIndex = if (canFillGroup) {
-            // EITHER:
-            //   1. Whole chunk matches the current key, but there are too many elements
-            //      to store in a single chunk.
-            //   2. The first element tag with a different name is "far enough" away from
-            //      the head of the chunk that we'll reach the max-tag threshold before we
-            //      reach it.
-            maxTagsPerFile - totalSize
-          } else {
-            // The first element tag with a different name is "close enough" to the head
-            // of the chunk that we can add all the remaining same-named tags to the current
-            // accumulator without passing the size threshold.
-            differsAt
-          }
-
-          val included = nextChunk.map(_._2).take(finalIndex)
-          val excluded = nextChunk.drop(finalIndex)
-
-          val nextTag = if (canFillGroup) {
-            // Begin building a new chunk for the same tag.
-            currentTag
-          } else {
-            // Begin building a chunk for a new tag.
-            excluded(0)._1
-          }
-          val nextOut = Chunk.concat((included :: out).reverse)
-          val nextAcc = Chunk.concat(acc.toList ::: List(Chunk(currentTag -> nextOut)))
-          rechunk(nextChunk, tagStream, nextTag, Nil, 0, Some(nextAcc))
         }
+      } else {
+        val canFillGroup = differsAt == -1 || totalSize + differsAt > maxSize
+        val finalIndex = if (canFillGroup) {
+          // EITHER:
+          //   1. Whole chunk matches the current key, but there are too many elements
+          //      to store in a single chunk.
+          //   2. The first element tag with a different name is "far enough" away from
+          //      the head of the chunk that we'll reach the max-tag threshold before we
+          //      reach it.
+          maxSize - totalSize
+        } else {
+          // The first element tag with a different name is "close enough" to the head
+          // of the chunk that we can add all the remaining same-named tags to the current
+          // accumulator without passing the size threshold.
+          differsAt
+        }
+
+        val included = nextChunk.map(_._2).take(finalIndex)
+        val excluded = nextChunk.drop(finalIndex)
+
+        val nextTag = if (canFillGroup) {
+          // Begin building a new chunk for the same tag.
+          currentTag
+        } else {
+          // Begin building a chunk for a new tag.
+          excluded(0)._1
+        }
+        val nextOut = Chunk.concat((included :: out).reverse)
+        val nextAcc = Chunk.concat(acc.toList ::: List(Chunk(currentTag -> nextOut)))
+        rechunk(nextChunk, tagStream, nextTag, Nil, 0, Some(nextAcc))
       }
+    }
 
-      val namedTags = tags.mapFilter { tag =>
-        tag.headOption.map(_.asStartElement().getName.getLocalPart -> tag)
-      }
+    val namedTags = tags.mapFilter { tag =>
+      tag.headOption.map(_.asStartElement().getName.getLocalPart -> tag)
+    }
 
-      groupAdjacentByTag(None, namedTags).stream.evalMap {
-        case (name, xmlChunk) =>
-          val jsonXMLConfig = new JsonXMLConfigBuilder()
-            .autoArray(true)
-            .autoPrimitive(false)
-            .virtualRoot(name)
-            .build()
-
-          IO.delay(File.newTemporaryFile()).flatMap { file =>
-            Resource.fromAutoCloseable(IO.delay(file.newOutputStream)).use {
-              outputStream =>
-                xmlChunk.traverse { xmlEvents =>
-                  val createWriter = IO.delay(
-                    new JsonXMLOutputFactory(jsonXMLConfig)
-                      .createXMLEventWriter(outputStream)
-                  )
-
-                  Resource
-                    .make(createWriter)(writer => IO.delay(writer.close()))
-                    .use { writer =>
-                      xmlEvents.traverse_(xmlEvent => IO.delay(writer.add(xmlEvent)))
-                    }
-                    .flatMap(_ => IO.delay(outputStream.write('\n')))
-                }.as(name -> file)
-            }
-          }
-      }
+    groupAdjacentByTag(None, namedTags).stream
   }
-}
 
-object XmlExtractor {
+  /**
+    * Build a pipe which will write named batches of XML tags to temp files as JSON-list,
+    * returning a stream of pointers to those files.
+    */
+  private val stageBatches: Pipe[IO, (String, Chunk[Tag]), (String, File)] = { batches =>
+    batches.evalMap {
+      case (name, xmlChunk) =>
+        val jsonXMLConfig = new JsonXMLConfigBuilder()
+          .autoArray(true)
+          .autoPrimitive(false)
+          .virtualRoot(name)
+          .build()
 
-  private type Tag = Chain[XMLEvent]
+        IO.delay(File.newTemporaryFile()).flatMap { file =>
+          Resource.fromAutoCloseable(IO.delay(file.newOutputStream)).use { outputStream =>
+            xmlChunk.traverse { xmlEvents =>
+              val createWriter = IO.delay(
+                new JsonXMLOutputFactory(jsonXMLConfig)
+                  .createXMLEventWriter(outputStream)
+              )
 
-  /** Helper used to build modified XML events when needed. */
-  private val EventFactory = new SimpleXMLEventFactory()
+              Resource
+                .make(createWriter)(writer => IO.delay(writer.close()))
+                .use { writer =>
+                  xmlEvents.traverse_(xmlEvent => IO.delay(writer.add(xmlEvent)))
+                }
+                .flatMap(_ => IO.delay(outputStream.write('\n')))
+            }.as(name -> file)
+          }
+        }
+    }
+  }
 }
