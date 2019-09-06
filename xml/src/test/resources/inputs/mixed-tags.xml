@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<Tests xmlns="http://www.adatum.com">
+    <Test id="1">
+        <name>First tag</name>
+    </Test>
+    <Test id="2">
+        <name>Second tag</name>
+    </Test>
+    <Test2 name="A">
+        <id>123</id>
+    </Test2>
+    <Test id="3">
+        <name>Third tag</name>
+    </Test>
+    <Test2 name="B">
+        <id>456</id>
+    </Test2>
+    <Test2 name="C">
+        <id>789</id>
+    </Test2>
+    <Test2 name="D">
+        <id>000</id>
+    </Test2>
+    <Test3 foo="bar" />
+</Tests>

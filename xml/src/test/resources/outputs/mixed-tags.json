@@ -1,0 +1,8 @@
+{"@xmlns": "http://www.adatum.com", "@id": "1", "name": "First tag"}
+{"@xmlns": "http://www.adatum.com", "@id": "2", "name": "Second tag"}
+{"@xmlns": "http://www.adatum.com", "@name": "A", "id": "123"}
+{"@xmlns": "http://www.adatum.com", "@id": "3", "name": "Third tag"}
+{"@xmlns": "http://www.adatum.com", "@name": "B", "id": "456"}
+{"@xmlns": "http://www.adatum.com", "@name": "C", "id": "789"}
+{"@xmlns": "http://www.adatum.com", "@name": "D", "id": "000"}
+{"@xmlns": "http://www.adatum.com", "@foo": "bar"}

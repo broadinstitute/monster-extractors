@@ -124,4 +124,17 @@ class XmlExtractorSpec extends FlatSpec with Matchers with EitherValues {
     tagsPerFile = 1,
     expectedParts = Nil
   )
+  it should behave like conversionTest(
+    "handle multiple top-level tag types in one document",
+    "mixed-tags",
+    tagsPerFile = 2,
+    expectedParts = List(
+      "Test/part-1.json" -> 2,
+      "Test2/part-1.json" -> 1,
+      "Test/part-2.json" -> 1,
+      "Test2/part-2.json" -> 2,
+      "Test2/part-3.json" -> 1,
+      "Test3/part-1.json" -> 1
+    )
+  )
 }
