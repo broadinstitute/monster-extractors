@@ -57,20 +57,14 @@ object ExtractorClp
 
     val gzipOpt = Opts.flag("gunzip-input", "Gunzip input before extraction").orFalse
 
-    val tagOpt = Opts.option[String](
-      "xml-tag",
-      "XML tag to extract as top-level objects in the JSON-list output.",
-      short = "t"
-    )
-
     val countOpt = Opts.option[Int](
       "objects-per-part",
       "Number of JSON objects to write to each partfile in the output.",
       short = "n"
     )
 
-    (inputOpt, outputOpt, gzipOpt, tagOpt, countOpt).mapN {
-      case (in, out, gunzip, tag, count) =>
+    (inputOpt, outputOpt, gzipOpt, countOpt).mapN {
+      case (in, out, gunzip, count) =>
         val blockingEc = {
           val allocate = IO.delay(Executors.newCachedThreadPool())
           val free = (es: ExecutorService) => IO.delay(es.shutdown())
@@ -84,8 +78,8 @@ object ExtractorClp
               if (gunzip) base.through(fs2.compress.gunzip(2 * 8192)) else base
             }
 
-            val writePath = (tmp: File, partNumber: Long, outPrefix: File) => {
-              val outFile = outPrefix / s"part-$partNumber.json"
+            val writePath = (tmp: File, outSuffix: String, outPrefix: File) => {
+              val outFile = outPrefix / outSuffix
               contextShift.evalOn(ec)(IO.delay(tmp.copyTo(outFile))).void
             }
 
@@ -94,7 +88,7 @@ object ExtractorClp
 
           for {
             _ <- IO.delay(out.createDirectories())
-            _ <- extractor.extract(in, out, tag, count)
+            _ <- extractor.extract(in, out, count)
           } yield {
             ExitCode.Success
           }

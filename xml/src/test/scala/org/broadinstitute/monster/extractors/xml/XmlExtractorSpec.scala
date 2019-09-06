@@ -2,7 +2,7 @@ package org.broadinstitute.monster.extractors.xml
 
 import better.files.File
 import cats.effect.{ContextShift, IO}
-import cats.implicits._
+import fs2.Stream
 import io.circe.Json
 import org.scalatest.{EitherValues, FlatSpec, Matchers}
 
@@ -21,26 +21,34 @@ class XmlExtractorSpec extends FlatSpec with Matchers with EitherValues {
   }
 
   private def extractor(
-    buffer: mutable.ArrayBuffer[(String, Long)]
+    buffer: mutable.ArrayBuffer[(String, List[Json])]
   ): XmlExtractor[String] =
     new XmlExtractor(
       readLocal,
-      (tmpFile, partNumber, _) =>
-        IO.delay(buffer.append(new String(tmpFile.byteArray) -> partNumber))
+      (tmpFile, targetName, _) =>
+        Stream
+          .eval(IO.delay(tmpFile.lines.toSeq))
+          .flatMap(Stream.emits)
+          .map(io.circe.parser.parse)
+          .rethrow
+          .compile
+          .toList
+          .flatMap(jsons => IO.delay(buffer.append(targetName -> jsons)))
     )
 
   def conversionTest(
     description: String,
     filename: String,
-    tagsPerFile: Int = 1
+    tagsPerFile: Int,
+    expectedParts: List[(String, Long)]
   ): Unit = {
     it should description in {
-      val buf = new mutable.ArrayBuffer[(String, Long)]()
+      val buf = new mutable.ArrayBuffer[(String, List[Json])]()
       val in = s"inputs/$filename.xml"
       val out = s"outputs/$filename.json"
 
       // Extract JSONs into memory.
-      extractor(buf).extract(in, out, "Test", tagsPerFile).unsafeRunSync()
+      extractor(buf).extract(in, out, tagsPerFile).unsafeRunSync()
 
       val expectedJsons = if (buf.isEmpty) {
         Nil
@@ -57,42 +65,76 @@ class XmlExtractorSpec extends FlatSpec with Matchers with EitherValues {
       }
 
       // Make sure expected objects were divided between output files as expected.
-      buf should have length (expectedJsons.length / tagsPerFile).toLong
+      buf.map { case (tag, jsons) => tag -> jsons.length } should contain theSameElementsInOrderAs expectedParts
 
       // Re-combine parts to make comparison simpler.
       val allOutputJsons = buf.foldLeft(List.empty[Json]) {
-        case (acc, (text, _)) =>
-          text.lines.toList.traverse(io.circe.parser.parse).right.value ::: acc
+        case (acc, (_, jsons)) => jsons ::: acc
       }
 
       allOutputJsons should contain theSameElementsAs expectedJsons
     }
   }
 
-  it should behave like conversionTest("convert XML to JSON", "simple")
+  it should behave like conversionTest(
+    "convert XML to JSON",
+    "simple",
+    tagsPerFile = 1,
+    expectedParts = List("Test/part-1.json" -> 1)
+  )
   it should behave like conversionTest(
     "convert repeated top-level tags into repeated objects",
-    "many-tags"
+    "many-tags",
+    tagsPerFile = 1,
+    expectedParts = List("Test/part-1.json" -> 1, "Test/part-2.json" -> 1)
   )
   it should behave like conversionTest(
     "support user-specified chunk counts for top-level repeated objects",
     "many-tags",
-    tagsPerFile = 2
+    tagsPerFile = 2,
+    expectedParts = List("Test/part-1.json" -> 2)
+  )
+  it should behave like conversionTest(
+    "terminate if there are fewer tags in the document than the max count",
+    "many-tags",
+    tagsPerFile = 100,
+    expectedParts = List("Test/part-1.json" -> 2)
   )
   it should behave like conversionTest(
     "convert nested tags into nested objects",
-    "nested"
+    "nested",
+    tagsPerFile = 1,
+    expectedParts = List("Test/part-1.json" -> 1)
   )
   it should behave like conversionTest(
     "convert repeated nested tags into arrays",
-    "nested-repeated"
+    "nested-repeated",
+    tagsPerFile = 1,
+    expectedParts = List("Test/part-1.json" -> 1)
   )
   it should behave like conversionTest(
     "include root-level attributes in top-level objects",
-    "root-attributes"
+    "root-attributes",
+    tagsPerFile = 2,
+    expectedParts = List("Test/part-1.json" -> 2)
   )
   it should behave like conversionTest(
     "not write output if there is no XML to extract",
-    "empty"
+    "empty",
+    tagsPerFile = 1,
+    expectedParts = Nil
+  )
+  it should behave like conversionTest(
+    "handle multiple top-level tag types in one document",
+    "mixed-tags",
+    tagsPerFile = 2,
+    expectedParts = List(
+      "Test/part-1.json" -> 2,
+      "Test2/part-1.json" -> 1,
+      "Test/part-2.json" -> 1,
+      "Test2/part-2.json" -> 2,
+      "Test2/part-3.json" -> 1,
+      "Test3/part-1.json" -> 1
+    )
   )
 }
