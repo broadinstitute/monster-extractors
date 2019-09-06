@@ -42,15 +42,19 @@ class XmlExtractorSpec extends FlatSpec with Matchers with EitherValues {
       // Extract JSONs into memory.
       extractor(buf).extract(in, out, "Test", tagsPerFile).unsafeRunSync()
 
-      val expectedJsons = readLocal(out)
-        .through(fs2.text.utf8Decode)
-        .through(fs2.text.lines)
-        .filter(!_.isEmpty)
-        .map(io.circe.parser.parse)
-        .rethrow
-        .compile
-        .toList
-        .unsafeRunSync()
+      val expectedJsons = if (buf.isEmpty) {
+        Nil
+      } else {
+        readLocal(out)
+          .through(fs2.text.utf8Decode)
+          .through(fs2.text.lines)
+          .filter(!_.isEmpty)
+          .map(io.circe.parser.parse)
+          .rethrow
+          .compile
+          .toList
+          .unsafeRunSync()
+      }
 
       // Make sure expected objects were divided between output files as expected.
       buf should have length (expectedJsons.length / tagsPerFile).toLong
@@ -82,5 +86,13 @@ class XmlExtractorSpec extends FlatSpec with Matchers with EitherValues {
   it should behave like conversionTest(
     "convert repeated nested tags into arrays",
     "nested-repeated"
+  )
+  it should behave like conversionTest(
+    "include root-level attributes in top-level objects",
+    "root-attributes"
+  )
+  it should behave like conversionTest(
+    "not write output if there is no XML to extract",
+    "empty"
   )
 }
