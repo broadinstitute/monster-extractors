@@ -1,7 +1,7 @@
 package org.broadinstitute.monster.extractors.xml
 
 import better.files.File
-import cats.effect.{ContextShift, IO}
+import cats.effect.{Blocker, ContextShift, IO}
 import fs2.Stream
 import io.circe.Json
 import org.scalatest.{EitherValues, FlatSpec, Matchers}
@@ -17,7 +17,7 @@ class XmlExtractorSpec extends FlatSpec with Matchers with EitherValues {
 
   private def readLocal(filename: String) = {
     val localFile = File("src/test/resources", filename)
-    fs2.io.file.readAll[IO](localFile.path, ExecutionContext.global, 8196)
+    Stream.resource(Blocker[IO]).flatMap(fs2.io.file.readAll[IO](localFile.path, _, 8196))
   }
 
   private def extractor(
