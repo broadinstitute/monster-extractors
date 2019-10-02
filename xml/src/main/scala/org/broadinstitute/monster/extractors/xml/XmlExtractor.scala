@@ -88,7 +88,7 @@ class XmlExtractor[Path] private[xml] (
     // Bridge Java's XML APIs into fs2's Stream implementation.
     val xmlEventStream = xml.through(fs2.io.toInputStream).flatMap { inputStream =>
       val reader = newInstance().createXMLEventReader(inputStream)
-      Stream.fromIterator[IO, XMLEvent](new Iterator[XMLEvent] {
+      Stream.fromIterator[IO](new Iterator[XMLEvent] {
         override def hasNext: Boolean = reader.hasNext
         override def next(): XMLEvent = reader.nextEvent()
       })

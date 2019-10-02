@@ -1,16 +1,12 @@
 package org.broadinstitute.monster.extractors.xml
 
-import java.util.concurrent.{ExecutorService, Executors}
-
 import better.files.File
 import buildinfo.BuildInfo
 import cats.data.{Validated, ValidatedNel}
-import cats.effect.{ExitCode, IO, Resource}
+import cats.effect.{Blocker, ExitCode, IO}
 import cats.implicits._
 import com.monovore.decline._
 import com.monovore.decline.effect._
-
-import scala.concurrent.ExecutionContext
 
 /**
   * Command-line program which can use our extractor functionality to convert
@@ -24,6 +20,7 @@ object ExtractorClp
     ) {
 
   implicit val fileArg: Argument[File] = new Argument[File] {
+
     override def read(string: String): ValidatedNel[String, File] =
       try {
         Validated.validNel(File(string))
@@ -65,29 +62,21 @@ object ExtractorClp
 
     (inputOpt, outputOpt, gzipOpt, countOpt).mapN {
       case (in, out, gunzip, count) =>
-        val blockingEc = {
-          val allocate = IO.delay(Executors.newCachedThreadPool())
-          val free = (es: ExecutorService) => IO.delay(es.shutdown())
-          Resource.make(allocate)(free).map(ExecutionContext.fromExecutor)
-        }
-
-        blockingEc.use { ec =>
+        Blocker[IO].use { blocker =>
           val extractor = {
             val readPath = (inFile: File) => {
-              val base = fs2.io.file.readAll[IO](inFile.path, ec, 8192)
+              val base = fs2.io.file.readAll[IO](inFile.path, blocker, 8192)
               if (gunzip) base.through(fs2.compress.gunzip(2 * 8192)) else base
             }
 
             val writePath = (tmp: File, outSuffix: String, outPrefix: File) => {
               val outFile = outPrefix / outSuffix
-              contextShift
-                .evalOn(ec) {
-                  IO.delay {
-                    outFile.parent.createDirectories()
-                    tmp.copyTo(outFile)
-                  }
+              blocker.blockOn {
+                IO.delay {
+                  outFile.parent.createDirectories()
+                  tmp.copyTo(outFile)
                 }
-                .void
+              }.void
             }
 
             new XmlExtractor[File](readPath, writePath)
