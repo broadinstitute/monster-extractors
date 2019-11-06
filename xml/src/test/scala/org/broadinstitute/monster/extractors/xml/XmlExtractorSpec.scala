@@ -10,7 +10,6 @@ import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 
 class XmlExtractorSpec extends FlatSpec with Matchers with EitherValues {
-
   behavior of "XmlExtractor"
 
   private implicit val cs: ContextShift[IO] = IO.contextShift(ExecutionContext.global)

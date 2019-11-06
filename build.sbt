@@ -14,8 +14,9 @@ lazy val `monster-extractors` = project
 
 lazy val xml = project
   .in(file("xml"))
-  .enablePlugins(BasePlugin)
+  .enablePlugins(MonsterBasePlugin)
   .settings(
+    publish / skip := true,
     // Main code.
     libraryDependencies ++= Seq(
       "com.github.pathikrit" %% "better-files" % betterFilesVersion,
@@ -26,12 +27,12 @@ lazy val xml = project
     // All tests.
     libraryDependencies ++= Seq(
       "org.scalatest" %% "scalatest" % scalaTestVersion
-    ).map(_ % Test),
+    ).map(_ % Test)
   )
 
 lazy val `xml-clp` = project
   .in(file("xml/clp"))
-  .enablePlugins(BasePlugin)
+  .enablePlugins(MonsterDockerPlugin)
   .dependsOn(xml)
   .settings(
     libraryDependencies ++= Seq(
@@ -39,4 +40,3 @@ lazy val `xml-clp` = project
       "com.monovore" %% "decline-effect" % declineVersion
     )
   )
-

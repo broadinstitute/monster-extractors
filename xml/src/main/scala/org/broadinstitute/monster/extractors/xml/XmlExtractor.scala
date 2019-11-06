@@ -32,7 +32,6 @@ class XmlExtractor[Path] private[xml] (
   getXml: Path => Stream[IO, Byte],
   writeJson: (File, String, Path) => IO[Unit]
 )(implicit context: ContextShift[IO]) {
-
   /** Helper used to build modified XML events when needed. */
   private val EventFactory = new SimpleXMLEventFactory()
 
