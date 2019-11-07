@@ -22,7 +22,12 @@ pipeline {
             }
         }
         stage('Publish') {
-            when { branch 'master' }
+            when {
+                anyOf {
+                    branch 'master'
+                    tag pattern: 'v\\d.*', comparator: 'REGEXP'
+                }
+            }
             environment {
                 PATH = "${tool('gcloud')}:${tool('vault')}:${tool('jq')}:$PATH"
                 // Some wiring is broken between the custom-tools plugin and
