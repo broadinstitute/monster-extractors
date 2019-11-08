@@ -1,8 +1,8 @@
 package org.broadinstitute.monster.extractors.xml
 
-import better.files.File
+import better.files._
 import cats.data.Chain
-import cats.effect.{ContextShift, IO, Resource}
+import cats.effect.{ContextShift, IO}
 import fs2.{Chunk, Pipe, Pull, Stream}
 import de.odysseus.staxon.json.{JsonXMLConfigBuilder, JsonXMLOutputFactory}
 import javax.xml.stream.XMLInputFactory._
@@ -10,6 +10,7 @@ import javax.xml.stream.events.{StartElement, XMLEvent}
 import cats.implicits._
 import de.odysseus.staxon.event.SimpleXMLEventFactory
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
+import javax.xml.stream.XMLEventWriter
 
 import scala.annotation.tailrec
 import scala.collection.Iterator
@@ -284,6 +285,8 @@ class XmlExtractor[Path] private[xml] (
     * returning a stream of pointers to those files.
     */
   private val stageBatches: Pipe[IO, (String, Chunk[Tag]), (String, File)] = { batches =>
+    import XmlExtractor.writerDisposer
+
     batches.evalMap {
       case (name, xmlChunk) =>
         val jsonXMLConfig = new JsonXMLConfigBuilder()
@@ -292,23 +295,25 @@ class XmlExtractor[Path] private[xml] (
           .virtualRoot(name)
           .build()
 
-        IO.delay(File.newTemporaryFile()).flatMap { file =>
-          Resource.fromAutoCloseable(IO.delay(file.newOutputStream)).use { outputStream =>
-            xmlChunk.traverse { xmlEvents =>
-              val createWriter = IO.delay(
-                new JsonXMLOutputFactory(jsonXMLConfig)
-                  .createXMLEventWriter(outputStream)
-              )
+        IO.delay {
+          val out = File.newTemporaryFile()
 
-              Resource
-                .make(createWriter)(writer => IO.delay(writer.close()))
-                .use { writer =>
-                  xmlEvents.traverse_(xmlEvent => IO.delay(writer.add(xmlEvent)))
-                }
-                .flatMap(_ => IO.delay(outputStream.write('\n')))
-            }.as(name -> file)
+          using(out.newOutputStream) { outputStream =>
+            xmlChunk.foreach { tagEvents =>
+              val writerFactory = new JsonXMLOutputFactory(jsonXMLConfig)
+              using(writerFactory.createXMLEventWriter(outputStream)) { writer =>
+                tagEvents.iterator.foreach(writer.add)
+              }
+              outputStream.write('\n')
+            }
           }
+
+          name -> out
         }
     }
   }
+}
+
+object XmlExtractor {
+  implicit val writerDisposer: Disposable[XMLEventWriter] = Disposable(_.close())
 }
