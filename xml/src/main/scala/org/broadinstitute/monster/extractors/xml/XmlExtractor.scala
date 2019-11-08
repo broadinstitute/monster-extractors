@@ -86,12 +86,17 @@ class XmlExtractor[Path] private[xml] (
     */
   private val parseXmlTags: Pipe[IO, Byte, Tag] = { xml =>
     // Bridge Java's XML APIs into fs2's Stream implementation.
-    val xmlEventStream = xml.through(fs2.io.toInputStream).flatMap { inputStream =>
-      val reader = newInstance().createXMLEventReader(inputStream)
-      Stream.fromIterator[IO](new Iterator[XMLEvent] {
-        override def hasNext: Boolean = reader.hasNext
-        override def next(): XMLEvent = reader.nextEvent()
+    val xmlEventStream = for {
+      inputStream <- xml.through(fs2.io.toInputStream)
+      eventReader <- Stream.eval(
+        IO.delay(newInstance().createXMLEventReader(inputStream))
+      )
+      event <- Stream.fromIterator[IO](new Iterator[XMLEvent] {
+        override def hasNext: Boolean = eventReader.hasNext
+        override def next(): XMLEvent = eventReader.nextEvent()
       })
+    } yield {
+      event
     }
 
     // Pull the stream until we find the first start element, which is the document root.
