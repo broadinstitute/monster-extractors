@@ -2,83 +2,58 @@ package org.broadinstitute.monster.extractors.xml
 
 import better.files._
 import cats.data.Chain
-import cats.effect.{ContextShift, IO}
-import fs2.{Chunk, Pipe, Pull, Stream}
-import de.odysseus.staxon.json.{JsonXMLConfigBuilder, JsonXMLOutputFactory}
-import javax.xml.stream.XMLInputFactory._
-import javax.xml.stream.events.{StartElement, XMLEvent}
+import cats.effect.{Blocker, ContextShift, IO}
+import fs2.{io => _, _}
+import javax.xml.stream.events.{EndElement, StartElement, XMLEvent}
 import cats.implicits._
-import de.odysseus.staxon.event.SimpleXMLEventFactory
+import com.ctc.wstx.stax.{WstxEventFactory, WstxInputFactory}
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
-import javax.xml.stream.XMLEventWriter
+import org.codehaus.jettison.AbstractXMLEventWriter
+import org.codehaus.jettison.badgerfish.BadgerFishXMLStreamWriter
 
 import scala.annotation.tailrec
 import scala.collection.Iterator
-import scala.collection.JavaConverters._
 
 /**
   * Utility which can mechanically convert a stream of XML to a stream of chunked JSON-list files.
   *
   * JSON-list files are temporarily stored on local disk in case the mechanism which writes
   * the data to its final storage space needs to know the total size of the file.
-  *
-  * @tparam Path type describing a location in the storage system where XML is hosted /
-  *              JSON-list should be written
-  *
-  * @param getXml function which can produce a stream of XML from a location in storage
-  * @param writeJson function which can copy a local temp file containing JSON-list data
-  *                  to an external storage system
   */
-class XmlExtractor[Path] private[xml] (
-  getXml: Path => Stream[IO, Byte],
-  writeJson: (File, String, Path) => IO[Unit]
-)(implicit context: ContextShift[IO]) {
-  /** Helper used to build modified XML events when needed. */
-  private val EventFactory = new SimpleXMLEventFactory()
-
+class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShift[IO]) {
   private val log = Slf4jLogger.getLogger[IO]
+
+  /** Helper used to build modified XML events when needed. */
+  private val EventFactory = new WstxEventFactory()
+
+  /** TODO */
+  private val ReaderFactory = new WstxInputFactory()
 
   private type Tag = Chain[XMLEvent]
 
   /**
-    * Extract an XML payload into a collection of JSON-list part-files,
+    * Extract an XML payload into a collection of JSON-list parts,
     * batching output JSON according to top-level tag and a max count.
     *
-    * @param input generic pointer to the input XML payload
-    * @param output generic pointer to the directory / prefix where
-    *               extracted JSON should be written
+    * @param input pointer to the input XML payload
+    * @param output pointer to the directory where JSON should be written
     * @param tagsPerFile maximum number of JSON objects to write to
     *                    each output file
     */
-  def extract(input: Path, output: Path, tagsPerFile: Int): IO[Unit] =
-    getXml(input)
+  def extract(
+    input: File,
+    output: File,
+    tagsPerFile: Int,
+    gunzip: Boolean
+  ): Stream[IO, (String, File)] = {
+    val baseBytes = fs2.io.file.readAll[IO](input.path, blocker, 8192)
+    val xml = if (gunzip) baseBytes.through(fs2.compress.gunzip(2 * 8192)) else baseBytes
+
+    xml
       .through(parseXmlTags)
       .through(batchTags(tagsPerFile))
-      .through(stageBatches)
-      .evalScan(Map.empty[String, Long]) {
-        case (partCounts, (tagName, jsonFile)) =>
-          val partNumber = partCounts.getOrElse(tagName, 0L) + 1L
-          for {
-            _ <- log.info(s"Writing part #$partNumber for $tagName to $output...")
-            _ <- writeJson(jsonFile, s"$tagName/part-$partNumber.json", output)
-              .guarantee(
-                IO.delay(jsonFile.delete())
-              )
-          } yield {
-            partCounts.updated(tagName, partNumber)
-          }
-      }
-      .compile
-      .last
-      .flatMap {
-        case None =>
-          log.warn(s"No extractable data found, nothing written to $output")
-        case Some(finalCounts) =>
-          finalCounts.toList.traverse_ {
-            case (tag, count) =>
-              log.info(s"Wrote $count parts to $output for tag $tag")
-          }
-      }
+      .through(writeJson(output))
+  }
 
   /**
     * Build a pipe which will convert a stream of raw bytes into a stream of
@@ -86,17 +61,12 @@ class XmlExtractor[Path] private[xml] (
     */
   private val parseXmlTags: Pipe[IO, Byte, Tag] = { xml =>
     // Bridge Java's XML APIs into fs2's Stream implementation.
-    val xmlEventStream = for {
-      inputStream <- xml.through(fs2.io.toInputStream)
-      eventReader <- Stream.eval(
-        IO.delay(newInstance().createXMLEventReader(inputStream))
-      )
-      event <- Stream.fromIterator[IO](new Iterator[XMLEvent] {
-        override def hasNext: Boolean = eventReader.hasNext
-        override def next(): XMLEvent = eventReader.nextEvent()
+    val xmlEventStream = xml.through(fs2.io.toInputStream).flatMap { inStream =>
+      Stream.fromIterator[IO](new Iterator[XMLEvent] {
+        private val underlying = ReaderFactory.createXMLEventReader(inStream)
+        override def hasNext: Boolean = underlying.hasNext
+        override def next(): XMLEvent = underlying.nextEvent()
       })
-    } yield {
-      event
     }
 
     // Pull the stream until we find the first start element, which is the document root.
@@ -109,7 +79,10 @@ class XmlExtractor[Path] private[xml] (
         case None => Pull.done
         // Begin recursive parsing on the element after the root.
         case Some((rootTag, nestedEvents)) =>
-          collectXmlTags(rootTag.asStartElement(), nestedEvents, Chain.empty, None)
+          val rootStart = rootTag.asStartElement()
+          val rootEnd =
+            EventFactory.createEndElement(rootStart.getName, rootStart.getNamespaces)
+          collectXmlTags((rootStart, rootEnd), nestedEvents, Chain.empty, None)
       }
       .stream
   }
@@ -117,8 +90,9 @@ class XmlExtractor[Path] private[xml] (
   /**
     * Helper for recursive chunking.
     *
-    * @param rootTag the root of the entire XML document. XML roots are stripped by chunking,
-    *        but we preserve their attributes in the top-level objects of our output
+    * @param rootElements a start/end pair of tags for the root of the entire XML document.
+    *                     XML roots are stripped by chunking, but we preserve their attributes
+    *                     in the top-level objects of our output
     * @param xmlEventStream un-chunked XML events
     * @param eventsAccumulated XML tags collected since reading the start of an `xmlTag`,
     *        before reading the corresponding end to the tag
@@ -126,7 +100,7 @@ class XmlExtractor[Path] private[xml] (
     *                   if any
     */
   private def collectXmlTags(
-    rootTag: StartElement,
+    rootElements: (StartElement, EndElement),
     xmlEventStream: Stream[IO, XMLEvent],
     eventsAccumulated: Chain[XMLEvent],
     currentTag: Option[String]
@@ -141,29 +115,25 @@ class XmlExtractor[Path] private[xml] (
           // Looking for a new root tag to begin accumulating.
           case None =>
             if (xmlEvent.isStartElement) {
-              // Start of a top-level tag. Build a new start element containing
-              // attributes from both this tag and the root element.
+              // Start of a top-level tag.
               val startElement = xmlEvent.asStartElement()
-              val allAttributes: Iterator[Any] =
-                startElement.getAttributes.asScala ++ rootTag.getAttributes.asScala
-              val allNamespaces: Iterator[Any] =
-                startElement.getNamespaces.asScala ++ rootTag.getNamespaces.asScala
-              val combinedElement = EventFactory.createStartElement(
-                startElement.getName,
-                allAttributes.asJava,
-                allNamespaces.asJava
-              )
-
-              // Initialize the accumulator with the new synthetic start, and recur.
+              // Recur with the start tag's name as the marker-to-accumulate.
               collectXmlTags(
-                rootTag,
+                rootElements,
                 xmlEventStream,
-                eventsAccumulated.append(combinedElement),
+                // Inject the root-level tags as a nested object so we don't
+                // lose any information when we output as flat JSON-list.
+                Chain(startElement, rootElements._1, rootElements._2),
                 currentTag = Some(startElement.getName.getLocalPart)
               )
             } else {
               // Not within a root-level tag, no point in accumulating the event.
-              collectXmlTags(rootTag, remainingXmlEvents, eventsAccumulated, currentTag)
+              collectXmlTags(
+                rootElements,
+                remainingXmlEvents,
+                eventsAccumulated,
+                currentTag
+              )
             }
 
           // Accumulating events under a tag.
@@ -177,7 +147,7 @@ class XmlExtractor[Path] private[xml] (
               Pull.output1(newAccumulator).flatMap { _ =>
                 // Recur with an empty accumulator.
                 collectXmlTags(
-                  rootTag,
+                  rootElements,
                   remainingXmlEvents,
                   Chain.empty,
                   currentTag = None
@@ -185,7 +155,7 @@ class XmlExtractor[Path] private[xml] (
               }
             } else {
               // Continue accumulating events.
-              collectXmlTags(rootTag, remainingXmlEvents, newAccumulator, currentTag)
+              collectXmlTags(rootElements, remainingXmlEvents, newAccumulator, currentTag)
             }
         }
     }
@@ -285,40 +255,35 @@ class XmlExtractor[Path] private[xml] (
     groupAdjacentByTag(None, namedTags).stream
   }
 
-  /**
-    * Build a pipe which will write named batches of XML tags to temp files as JSON-list,
-    * returning a stream of pointers to those files.
-    */
-  private val stageBatches: Pipe[IO, (String, Chunk[Tag]), (String, File)] = { batches =>
-    import XmlExtractor.writerDisposer
+  /** TODO */
+  private def writeJson(out: File): Pipe[IO, (String, Chunk[Tag]), (String, File)] =
+    _.mapAccumulate(Map.empty[String, Long]) {
+      case (partCounts, (tagName, xmlChonk)) =>
+        val partNumber = partCounts.getOrElse(tagName, 0L) + 1L
+        (partCounts.updated(tagName, partNumber), (tagName, xmlChonk, partNumber))
+    }.evalMap {
+      case (_, (tagName, xmlChonk, partNumber)) =>
+        log
+          .info(s"Writing part #$partNumber for $tagName to $out...")
+          .flatMap { _ =>
+            blocker.delay[IO, File] {
+              val parentDir = (out / tagName).createDirectories()
+              val outFile = parentDir / s"part-$partNumber.json"
 
-    batches.evalMap {
-      case (name, xmlChunk) =>
-        val jsonXMLConfig = new JsonXMLConfigBuilder()
-          .autoArray(true)
-          .autoPrimitive(false)
-          .virtualRoot(name)
-          .build()
-
-        IO.delay {
-          val out = File.newTemporaryFile()
-
-          using(out.newOutputStream) { outputStream =>
-            xmlChunk.foreach { tagEvents =>
-              val writerFactory = new JsonXMLOutputFactory(jsonXMLConfig)
-              using(writerFactory.createXMLEventWriter(outputStream)) { writer =>
-                tagEvents.iterator.foreach(writer.add)
+              outFile.bufferedWriter.foreach { writer =>
+                xmlChonk.foreach { tag =>
+                  val jsonWriter = new BadgerFishXMLStreamWriter(writer)
+                  val eventWriter = new AbstractXMLEventWriter(jsonWriter)
+                  tag.iterator.foreach(eventWriter.add)
+                  // Force the writer to output its accumulated state.
+                  jsonWriter.writeEndDocument()
+                  writer.write('\n')
+                }
               }
-              outputStream.write('\n')
+
+              outFile
             }
           }
-
-          name -> out
-        }
+          .map(tagName -> _)
     }
-  }
-}
-
-object XmlExtractor {
-  implicit val writerDisposer: Disposable[XMLEventWriter] = Disposable(_.close())
 }

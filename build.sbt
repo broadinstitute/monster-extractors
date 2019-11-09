@@ -2,9 +2,10 @@ val betterFilesVersion = "3.8.0"
 val circeVersion = "0.12.3"
 val declineVersion = "1.0.0"
 val fs2Version = "2.1.0"
+val jettisonVersion = "1.4.0"
 val logbackVersion = "1.2.3"
 val log4CatsVersion = "1.0.0"
-val staxonVersion = "1.3"
+val woodstoxVersion = "6.0.2"
 
 // Testing.
 val scalaTestVersion = "3.0.8"
@@ -24,9 +25,10 @@ lazy val xml = project
       "ch.qos.logback" % "logback-classic" % logbackVersion,
       "co.fs2" %% "fs2-core" % fs2Version,
       "co.fs2" %% "fs2-io" % fs2Version,
+      "com.fasterxml.woodstox" % "woodstox-core" % woodstoxVersion,
       "com.github.pathikrit" %% "better-files" % betterFilesVersion,
-      "de.odysseus.staxon" % "staxon" % staxonVersion,
-      "io.chrisdavenport" %% "log4cats-slf4j" % log4CatsVersion
+      "io.chrisdavenport" %% "log4cats-slf4j" % log4CatsVersion,
+      "org.codehaus.jettison" % "jettison" % jettisonVersion
     ),
     // All tests.
     libraryDependencies ++= Seq(
