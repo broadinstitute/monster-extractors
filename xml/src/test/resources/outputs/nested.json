@@ -1,1 +1,1 @@
-{"@xmlns": "http://www.adatum.com", "@TestId": "0004", "@TestType": "GUI", "Nested": {"Nested2": {"Info":  "Testing nested layers"}, "NestedInput": "Nested Input", "NestedOutput": "Nested Output"}}
+{"Test": {"Tests": {"@xmlns": {"$": "http://www.adatum.com"}},"@TestId": "0004", "@TestType": "GUI", "Nested": {"Nested2": {"Info": {"$": "Testing nested layers"}}, "NestedInput": {"$": "Nested Input"}, "NestedOutput":{"$": "Nested Output"}}}}

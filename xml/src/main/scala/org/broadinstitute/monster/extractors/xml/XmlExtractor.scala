@@ -26,7 +26,7 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
   /** Helper used to build modified XML events when needed. */
   private val EventFactory = new WstxEventFactory()
 
-  /** TODO */
+  /** Helper used to build XML readers when needed. */
   private val ReaderFactory = new WstxInputFactory()
 
   private type Tag = Chain[XMLEvent]
@@ -45,7 +45,7 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
     output: File,
     tagsPerFile: Int,
     gunzip: Boolean
-  ): Stream[IO, (String, File)] = {
+  ): Stream[IO, File] = {
     val baseBytes = fs2.io.file.readAll[IO](input.path, blocker, 8192)
     val xml = if (gunzip) baseBytes.through(fs2.compress.gunzip(2 * 8192)) else baseBytes
 
@@ -255,8 +255,14 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
     groupAdjacentByTag(None, namedTags).stream
   }
 
-  /** TODO */
-  private def writeJson(out: File): Pipe[IO, (String, Chunk[Tag]), (String, File)] =
+  /**
+    * Build a pipe which will write XML batches (grouped by element name) to disk
+    * as JSON-list part-files under an output directory.
+    *
+    * @param out path to the directory where output part-files should be written.
+    *            Files will be written at paths like `out`/`element-name`/`part-N.json`
+    */
+  private def writeJson(out: File): Pipe[IO, (String, Chunk[Tag]), File] =
     _.mapAccumulate(Map.empty[String, Long]) {
       case (partCounts, (tagName, xmlChonk)) =>
         val partNumber = partCounts.getOrElse(tagName, 0L) + 1L
@@ -284,6 +290,5 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
               outFile
             }
           }
-          .map(tagName -> _)
     }
 }

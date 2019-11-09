@@ -2,38 +2,27 @@ package org.broadinstitute.monster.extractors.xml
 
 import better.files.File
 import cats.effect.{Blocker, ContextShift, IO}
-import fs2.Stream
+import cats.implicits._
 import io.circe.Json
 import org.scalatest.{EitherValues, FlatSpec, Matchers}
 
-import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 
 class XmlExtractorSpec extends FlatSpec with Matchers with EitherValues {
   behavior of "XmlExtractor"
 
   private implicit val cs: ContextShift[IO] = IO.contextShift(ExecutionContext.global)
+  private val blocker = Blocker.liftExecutionContext(ExecutionContext.global)
 
-  private def readLocal(filename: String) = {
-    val localFile = File("src/test/resources", filename)
-    Stream.resource(Blocker[IO]).flatMap(fs2.io.file.readAll[IO](localFile.path, _, 8196))
-  }
+  private def extractor: XmlExtractor = new XmlExtractor(blocker)
 
-  private def extractor(
-    buffer: mutable.ArrayBuffer[(String, List[Json])]
-  ): XmlExtractor[String] =
-    new XmlExtractor(
-      readLocal,
-      (tmpFile, targetName, _) =>
-        Stream
-          .eval(IO.delay(tmpFile.lines.toSeq))
-          .flatMap(Stream.emits)
-          .map(io.circe.parser.parse)
-          .rethrow
-          .compile
-          .toList
-          .flatMap(jsons => IO.delay(buffer.append(targetName -> jsons)))
-    )
+  private def readJsons(file: File): List[Json] =
+    file.lines
+      .filter(!_.isEmpty)
+      .toList
+      .traverse(io.circe.parser.parse)
+      .right
+      .value
 
   def conversionTest(
     description: String,
@@ -42,36 +31,33 @@ class XmlExtractorSpec extends FlatSpec with Matchers with EitherValues {
     expectedParts: List[(String, Long)]
   ): Unit = {
     it should description in {
-      val buf = new mutable.ArrayBuffer[(String, List[Json])]()
-      val in = s"inputs/$filename.xml"
-      val out = s"outputs/$filename.json"
+      val input = File(s"src/test/resources/inputs/$filename.xml")
+      val expectedJsons = readJsons(File(s"src/test/resources/outputs/$filename.json"))
 
-      // Extract JSONs into memory.
-      extractor(buf).extract(in, out, tagsPerFile).unsafeRunSync()
-
-      val expectedJsons = if (buf.isEmpty) {
-        Nil
-      } else {
-        readLocal(out)
-          .through(fs2.text.utf8Decode)
-          .through(fs2.text.lines)
-          .filter(!_.isEmpty)
-          .map(io.circe.parser.parse)
-          .rethrow
+      File.temporaryDirectory() { tmpOut =>
+        // Extract JSONs into memory.
+        val jsonsByFilename = extractor
+          .extract(input, tmpOut, tagsPerFile, gunzip = false)
+          .map { outFile =>
+            val relativeName = tmpOut.relativize(outFile).toString
+            relativeName -> readJsons(outFile)
+          }
           .compile
           .toList
           .unsafeRunSync()
+
+        // Make sure expected objects were divided between output files as expected.
+        jsonsByFilename.map {
+          case (tag, jsons) => tag -> jsons.length
+        } should contain theSameElementsInOrderAs expectedParts
+
+        // Re-combine parts to make comparison simpler.
+        val allOutputJsons = jsonsByFilename.foldLeft(List.empty[Json]) {
+          case (acc, (_, jsons)) => jsons ::: acc
+        }
+
+        allOutputJsons should contain theSameElementsAs expectedJsons
       }
-
-      // Make sure expected objects were divided between output files as expected.
-      buf.map { case (tag, jsons) => tag -> jsons.length } should contain theSameElementsInOrderAs expectedParts
-
-      // Re-combine parts to make comparison simpler.
-      val allOutputJsons = buf.foldLeft(List.empty[Json]) {
-        case (acc, (_, jsons)) => jsons ::: acc
-      }
-
-      allOutputJsons should contain theSameElementsAs expectedJsons
     }
   }
 
