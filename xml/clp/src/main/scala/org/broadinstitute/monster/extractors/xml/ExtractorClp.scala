@@ -63,26 +63,14 @@ object ExtractorClp
     (inputOpt, outputOpt, gzipOpt, countOpt).mapN {
       case (in, out, gunzip, count) =>
         Blocker[IO].use { blocker =>
-          val extractor = {
-            val readPath = (inFile: File) => {
-              val base = fs2.io.file.readAll[IO](inFile.path, blocker, 8192)
-              if (gunzip) base.through(fs2.compress.gunzip(2 * 8192)) else base
+          new XmlExtractor(blocker)
+            .extract(in, out, count, gunzip)
+            .compile
+            .last
+            .map {
+              case None    => ExitCode.Error
+              case Some(_) => ExitCode.Success
             }
-
-            val writePath = (tmp: File, outSuffix: String, outPrefix: File) => {
-              val outFile = outPrefix / outSuffix
-              blocker.blockOn {
-                IO.delay {
-                  outFile.parent.createDirectories()
-                  tmp.copyTo(outFile)
-                }
-              }.void
-            }
-
-            new XmlExtractor[File](readPath, writePath)
-          }
-
-          extractor.extract(in, out, count).as(ExitCode.Success)
         }
     }
   }
