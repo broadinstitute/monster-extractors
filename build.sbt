@@ -12,14 +12,8 @@ val scalaTestVersion = "3.0.8"
 
 lazy val `monster-xml-to-json-list` = project
   .in(file("."))
-  .aggregate(xml)
-  .settings(publish / skip := true)
-
-lazy val xml = project
-  .in(file("xml"))
   .enablePlugins(MonsterDockerPlugin)
   .settings(
-    publish / skip := true,
     // Main code.
     libraryDependencies ++= Seq(
       "ch.qos.logback" % "logback-classic" % logbackVersion,
@@ -39,4 +33,3 @@ lazy val xml = project
       "org.scalatest" %% "scalatest" % scalaTestVersion
     ).map(_ % Test),
   )
-
