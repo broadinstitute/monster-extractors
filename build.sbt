@@ -31,5 +31,5 @@ lazy val `monster-xml-to-json-list` = project
       "io.circe" %% "circe-core" % circeVersion,
       "io.circe" %% "circe-parser" % circeVersion,
       "org.scalatest" %% "scalatest" % scalaTestVersion
-    ).map(_ % Test),
+    ).map(_ % Test)
   )
