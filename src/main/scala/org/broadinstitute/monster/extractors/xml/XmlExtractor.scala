@@ -11,7 +11,6 @@ import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import org.codehaus.jettison.AbstractXMLEventWriter
 import org.codehaus.jettison.badgerfish.BadgerFishXMLStreamWriter
 
-import scala.annotation.tailrec
 import scala.collection.Iterator
 
 /**
@@ -167,92 +166,14 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
     * @param maxSize max number of tags to include in a single output batch
     */
   private def batchTags(maxSize: Int): Pipe[IO, Tag, (String, Chunk[Tag])] = { tags =>
-    /*
-     * NOTE: The logic in these two definitions is almost entirely lifted from
-     * the body of `groupAdjacentBy` in fs2's Stream implementation, with:
-     *   1. (Hopeful) readability improvements for our specific case
-     *   2. Some adjustments to account for a max size on the output groups
-     *
-     * https://github.com/functional-streams-for-scala/fs2/issues/1588 tracks
-     * patching the "max size" option back into fs2.
-     */
-    def groupAdjacentByTag(
-      currentGroup: Option[(String, Chunk[Tag])],
-      tagStream: Stream[IO, (String, Tag)]
-    ): Pull[IO, (String, Chunk[Tag]), Unit] =
-      tagStream.pull.uncons.flatMap {
-        case Some((nextChunk, remainingTags)) =>
-          if (nextChunk.nonEmpty) {
-            val (tagName, out) =
-              currentGroup.getOrElse(nextChunk(0)._1 -> Chunk.empty[Tag])
-            rechunk(nextChunk, remainingTags, tagName, List(out), out.size, None)
-          } else {
-            groupAdjacentByTag(currentGroup, remainingTags)
-          }
-        case None =>
-          currentGroup.map(Pull.output1).getOrElse(Pull.done)
-      }
-
-    @tailrec
-    def rechunk(
-      nextChunk: Chunk[(String, Tag)],
-      tagStream: Stream[IO, (String, Tag)],
-      currentTag: String,
-      out: List[Chunk[Tag]],
-      totalSize: Int,
-      acc: Option[Chunk[(String, Chunk[Tag])]]
-    ): Pull[IO, (String, Chunk[Tag]), Unit] = {
-      val chunkSize = nextChunk.size
-      val differsAt = nextChunk.indexWhere(_._1 != currentTag).getOrElse(-1)
-      if (differsAt == -1 && totalSize + chunkSize <= maxSize) {
-        // Whole chunk matches the current key, add this chunk to the accumulated output.
-        val newOut = Chunk.concat((nextChunk.map(_._2) :: out).reverse)
-        acc match {
-          case None =>
-            groupAdjacentByTag(Some(currentTag -> newOut), tagStream)
-          case Some(acc) =>
-            // Potentially outputs one additional chunk (by splitting the last one in two)
-            Pull.output(acc) >>
-              groupAdjacentByTag(Some(currentTag -> newOut), tagStream)
-        }
-      } else {
-        val canFillGroup = differsAt == -1 || totalSize + differsAt > maxSize
-        val finalIndex = if (canFillGroup) {
-          // EITHER:
-          //   1. Whole chunk matches the current key, but there are too many elements
-          //      to store in a single chunk.
-          //   2. The first element tag with a different name is "far enough" away from
-          //      the head of the chunk that we'll reach the max-tag threshold before we
-          //      reach it.
-          maxSize - totalSize
-        } else {
-          // The first element tag with a different name is "close enough" to the head
-          // of the chunk that we can add all the remaining same-named tags to the current
-          // accumulator without passing the size threshold.
-          differsAt
-        }
-
-        val included = nextChunk.map(_._2).take(finalIndex)
-        val excluded = nextChunk.drop(finalIndex)
-
-        val nextTag = if (canFillGroup) {
-          // Begin building a new chunk for the same tag.
-          currentTag
-        } else {
-          // Begin building a chunk for a new tag.
-          excluded(0)._1
-        }
-        val nextOut = Chunk.concat((included :: out).reverse)
-        val nextAcc = Chunk.concat(acc.toList ::: List(Chunk(currentTag -> nextOut)))
-        rechunk(nextChunk, tagStream, nextTag, Nil, 0, Some(nextAcc))
-      }
-    }
 
     val namedTags = tags.mapFilter { tag =>
       tag.headOption.map(_.asStartElement().getName.getLocalPart -> tag)
     }
 
-    groupAdjacentByTag(None, namedTags).stream
+    namedTags.groupAdjacentByLimit(maxSize)(_._1).map {
+      case (tag, group) => tag -> group.map(_._2)
+    }
   }
 
   /**
