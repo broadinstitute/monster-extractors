@@ -1,11 +1,11 @@
 package org.broadinstitute.monster.extractors.xml
 
 import better.files._
-import cats.data.Chain
+import cats.data._
 import cats.effect.{Blocker, ContextShift, IO}
+import cats.implicits._
 import fs2.{io => _, _}
 import javax.xml.stream.events.{EndElement, StartElement, XMLEvent}
-import cats.implicits._
 import com.ctc.wstx.stax.{WstxEventFactory, WstxInputFactory}
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import org.codehaus.jettison.AbstractXMLEventWriter
@@ -27,8 +27,6 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
 
   /** Helper used to build XML readers when needed. */
   private val ReaderFactory = new WstxInputFactory()
-
-  private type Tag = Chain[XMLEvent]
 
   /**
     * Extract an XML payload into a collection of JSON-list parts,
@@ -58,7 +56,7 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
     * Build a pipe which will convert a stream of raw bytes into a stream of
     * XML chunks, where each chunk represents a single instance of an XML tag.
     */
-  private val parseXmlTags: Pipe[IO, Byte, Tag] = { xml =>
+  private val parseXmlTags: Pipe[IO, Byte, NonEmptyChain[XMLEvent]] = { xml =>
     // Bridge Java's XML APIs into fs2's Stream implementation.
     val xmlEventStream = xml.through(fs2.io.toInputStream).flatMap { inStream =>
       Stream.fromIterator[IO](new Iterator[XMLEvent] {
@@ -103,7 +101,7 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
     xmlEventStream: Stream[IO, XMLEvent],
     eventsAccumulated: Chain[XMLEvent],
     currentTag: Option[String]
-  ): Pull[IO, Tag, Unit] =
+  ): Pull[IO, NonEmptyChain[XMLEvent], Unit] =
     xmlEventStream.pull.uncons1.flatMap {
       // No remaining events, exit the recursive loop.
       case None => Pull.done
@@ -142,15 +140,20 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
                   .asEndElement()
                   .getName
                   .getLocalPart == xmlTag) {
-              // End of the accumulated tag, push a new chunk out of the stream.
-              Pull.output1(newAccumulator).flatMap { _ =>
-                // Recur with an empty accumulator.
-                collectXmlTags(
-                  rootElements,
-                  remainingXmlEvents,
-                  Chain.empty,
-                  currentTag = None
-                )
+              // Recur with an empty accumulator.
+              val remainingTags = collectXmlTags(
+                rootElements,
+                remainingXmlEvents,
+                Chain.empty,
+                currentTag = None
+              )
+
+              // End of the accumulated tag, push a new chunk out of the stream
+              // if we've accumulated anything.
+              NonEmptyChain.fromChain(newAccumulator) match {
+                case None => remainingTags
+                case Some(completeTag) =>
+                  Pull.output1(completeTag).flatMap(_ => remainingTags)
               }
             } else {
               // Continue accumulating events.
@@ -165,16 +168,10 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
     *
     * @param maxSize max number of tags to include in a single output batch
     */
-  private def batchTags(maxSize: Int): Pipe[IO, Tag, (String, Chunk[Tag])] = { tags =>
-
-    val namedTags = tags.mapFilter { tag =>
-      tag.headOption.map(_.asStartElement().getName.getLocalPart -> tag)
-    }
-
-    namedTags.groupAdjacentByLimit(maxSize)(_._1).map {
-      case (tag, group) => tag -> group.map(_._2)
-    }
-  }
+  private def batchTags(
+    maxSize: Int
+  ): Pipe[IO, NonEmptyChain[XMLEvent], (String, Chunk[NonEmptyChain[XMLEvent]])] =
+    _.groupAdjacentByLimit(maxSize)(_.head.asStartElement().getName.getLocalPart)
 
   /**
     * Build a pipe which will write XML batches (grouped by element name) to disk
@@ -183,7 +180,9 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
     * @param out path to the directory where output part-files should be written.
     *            Files will be written at paths like `out`/`element-name`/`part-N.json`
     */
-  private def writeJson(out: File): Pipe[IO, (String, Chunk[Tag]), File] =
+  private def writeJson(
+    out: File
+  ): Pipe[IO, (String, Chunk[NonEmptyChain[XMLEvent]]), File] =
     _.mapAccumulate(Map.empty[String, Long]) {
       case (partCounts, (tagName, xmlChonk)) =>
         val partNumber = partCounts.getOrElse(tagName, 0L) + 1L
