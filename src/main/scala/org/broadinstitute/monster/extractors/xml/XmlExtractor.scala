@@ -140,21 +140,18 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
                   .asEndElement()
                   .getName
                   .getLocalPart == xmlTag) {
-              // Recur with an empty accumulator.
-              val remainingTags = collectXmlTags(
+              // End of the accumulated tag. Output anything we've collected and
+              // recur with an empty accumulator.
+              val outputIfNonEmpty = NonEmptyChain
+                .fromChain(newAccumulator)
+                .fold[Pull[IO, NonEmptyChain[XMLEvent], Unit]](Pull.done)(Pull.output1)
+
+              outputIfNonEmpty >> collectXmlTags(
                 rootElements,
                 remainingXmlEvents,
                 Chain.empty,
                 currentTag = None
               )
-
-              // End of the accumulated tag, push a new chunk out of the stream
-              // if we've accumulated anything.
-              NonEmptyChain.fromChain(newAccumulator) match {
-                case None => remainingTags
-                case Some(completeTag) =>
-                  Pull.output1(completeTag).flatMap(_ => remainingTags)
-              }
             } else {
               // Continue accumulating events.
               collectXmlTags(rootElements, remainingXmlEvents, newAccumulator, currentTag)
