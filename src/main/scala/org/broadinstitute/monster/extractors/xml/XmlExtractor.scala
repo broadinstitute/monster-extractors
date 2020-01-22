@@ -48,7 +48,7 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
 
     xml
       .through(parseXmlTags)
-      .through(batchTags(tagsPerFile))
+      .groupAdjacentByLimit(tagsPerFile)(_.head.asStartElement().getName.getLocalPart)
       .through(writeJson(output))
   }
 
@@ -158,17 +158,6 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
             }
         }
     }
-
-  /**
-    * Build a pipe which will convert a stream of XML tags into batches of tags,
-    * paired with the name of the top-level start element common to every tag in the batch.
-    *
-    * @param maxSize max number of tags to include in a single output batch
-    */
-  private def batchTags(
-    maxSize: Int
-  ): Pipe[IO, NonEmptyChain[XMLEvent], (String, Chunk[NonEmptyChain[XMLEvent]])] =
-    _.groupAdjacentByLimit(maxSize)(_.head.asStartElement().getName.getLocalPart)
 
   /**
     * Build a pipe which will write XML batches (grouped by element name) to disk
