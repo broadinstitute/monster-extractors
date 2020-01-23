@@ -1,7 +1,7 @@
 val betterFilesVersion = "3.8.0"
 val circeVersion = "0.12.3"
 val declineVersion = "1.0.0"
-val fs2Version = "2.1.0"
+val fs2Version = "2.2.1"
 val jettisonVersion = "1.4.0"
 val logbackVersion = "1.2.3"
 val log4CatsVersion = "1.0.0"
@@ -10,16 +10,10 @@ val woodstoxVersion = "6.0.2"
 // Testing.
 val scalaTestVersion = "3.0.8"
 
-lazy val `monster-extractors` = project
+lazy val `monster-xml-to-json-list` = project
   .in(file("."))
-  .aggregate(xml, `xml-clp`)
-  .settings(publish / skip := true)
-
-lazy val xml = project
-  .in(file("xml"))
-  .enablePlugins(MonsterBasePlugin)
+  .enablePlugins(MonsterDockerPlugin)
   .settings(
-    publish / skip := true,
     // Main code.
     libraryDependencies ++= Seq(
       "ch.qos.logback" % "logback-classic" % logbackVersion,
@@ -28,7 +22,9 @@ lazy val xml = project
       "com.fasterxml.woodstox" % "woodstox-core" % woodstoxVersion,
       "com.github.pathikrit" %% "better-files" % betterFilesVersion,
       "io.chrisdavenport" %% "log4cats-slf4j" % log4CatsVersion,
-      "org.codehaus.jettison" % "jettison" % jettisonVersion
+      "org.codehaus.jettison" % "jettison" % jettisonVersion,
+      "com.monovore" %% "decline" % declineVersion,
+      "com.monovore" %% "decline-effect" % declineVersion
     ),
     // All tests.
     libraryDependencies ++= Seq(
@@ -36,15 +32,4 @@ lazy val xml = project
       "io.circe" %% "circe-parser" % circeVersion,
       "org.scalatest" %% "scalatest" % scalaTestVersion
     ).map(_ % Test)
-  )
-
-lazy val `xml-clp` = project
-  .in(file("xml/clp"))
-  .enablePlugins(MonsterDockerPlugin)
-  .dependsOn(xml)
-  .settings(
-    libraryDependencies ++= Seq(
-      "com.monovore" %% "decline" % declineVersion,
-      "com.monovore" %% "decline-effect" % declineVersion
-    )
   )
