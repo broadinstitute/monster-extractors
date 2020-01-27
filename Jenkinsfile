@@ -5,6 +5,9 @@ pipeline {
         timestamps()
         ansiColor('xterm')
     }
+    environment {
+        PATH = "${tool('sbt')}:$PATH"
+    }
     stages {
         stage('Check formatting') {
             steps {
