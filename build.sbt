@@ -1,7 +1,8 @@
 val betterFilesVersion = "3.8.0"
+val catsEffectVersion = "2.1.0"
 val circeVersion = "0.12.3"
 val declineVersion = "1.0.0"
-val fs2Version = "2.2.1"
+val fs2Version = "2.2.2"
 val jettisonVersion = "1.4.0"
 val logbackVersion = "1.2.3"
 val log4CatsVersion = "1.0.0"
@@ -23,6 +24,7 @@ lazy val `monster-xml-to-json-list` = project
       "com.github.pathikrit" %% "better-files" % betterFilesVersion,
       "io.chrisdavenport" %% "log4cats-slf4j" % log4CatsVersion,
       "org.codehaus.jettison" % "jettison" % jettisonVersion,
+      "org.typelevel" %% "cats-effect" % catsEffectVersion,
       "com.monovore" %% "decline" % declineVersion,
       "com.monovore" %% "decline-effect" % declineVersion
     ),
