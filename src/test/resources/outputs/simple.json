@@ -1,1 +1,2 @@
-{"Test": {"@id": "1", "name": {"$": "Minimal XML"}, "Tests": {"@xmlns": {"$": "http://www.adatum.com"}}}}
+{"Tests": {"@xmlns": {"$": "http://www.adatum.com"}}}
+{"Test": {"@id": "1", "name": {"$": "Minimal XML"}}}

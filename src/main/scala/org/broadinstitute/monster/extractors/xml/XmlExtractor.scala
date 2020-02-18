@@ -5,7 +5,7 @@ import cats.data._
 import cats.effect.{Blocker, ContextShift, IO}
 import cats.implicits._
 import fs2.{io => _, _}
-import javax.xml.stream.events.{EndElement, StartElement, XMLEvent}
+import javax.xml.stream.events.XMLEvent
 import com.ctc.wstx.stax.{WstxEventFactory, WstxInputFactory}
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import org.codehaus.jettison.AbstractXMLEventWriter
@@ -79,7 +79,9 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
           val rootStart = rootTag.asStartElement()
           val rootEnd =
             EventFactory.createEndElement(rootStart.getName, rootStart.getNamespaces)
-          collectXmlTags((rootStart, rootEnd), nestedEvents, Chain.empty, None)
+
+          Pull.output1(NonEmptyChain(rootStart, rootEnd)) >>
+            collectXmlTags(nestedEvents, Chain.empty, None)
       }
       .stream
   }
@@ -87,9 +89,6 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
   /**
     * Helper for recursive chunking.
     *
-    * @param rootElements a start/end pair of tags for the root of the entire XML document.
-    *                     XML roots are stripped by chunking, but we preserve their attributes
-    *                     in the top-level objects of our output
     * @param xmlEventStream un-chunked XML events
     * @param eventsAccumulated XML tags collected since reading the start of an `xmlTag`,
     *        before reading the corresponding end to the tag
@@ -97,7 +96,6 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
     *                   if any
     */
   private def collectXmlTags(
-    rootElements: (StartElement, EndElement),
     xmlEventStream: Stream[IO, XMLEvent],
     eventsAccumulated: Chain[XMLEvent],
     currentTag: Option[String]
@@ -116,17 +114,13 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
               val startElement = xmlEvent.asStartElement()
               // Recur with the start tag's name as the marker-to-accumulate.
               collectXmlTags(
-                rootElements,
                 xmlEventStream,
-                // Inject the root-level tags as a nested object so we don't
-                // lose any information when we output as flat JSON-list.
-                Chain(startElement, rootElements._1, rootElements._2),
+                Chain(startElement),
                 currentTag = Some(startElement.getName.getLocalPart)
               )
             } else {
               // Not within a root-level tag, no point in accumulating the event.
               collectXmlTags(
-                rootElements,
                 remainingXmlEvents,
                 eventsAccumulated,
                 currentTag
@@ -147,14 +141,13 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
                 .fold[Pull[IO, NonEmptyChain[XMLEvent], Unit]](Pull.done)(Pull.output1)
 
               outputIfNonEmpty >> collectXmlTags(
-                rootElements,
                 remainingXmlEvents,
                 Chain.empty,
                 currentTag = None
               )
             } else {
               // Continue accumulating events.
-              collectXmlTags(rootElements, remainingXmlEvents, newAccumulator, currentTag)
+              collectXmlTags(remainingXmlEvents, newAccumulator, currentTag)
             }
         }
     }

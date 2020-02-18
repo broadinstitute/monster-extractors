@@ -67,55 +67,54 @@ class XmlExtractorSpec extends AnyFlatSpec with Matchers with EitherValues {
     "convert XML to JSON",
     "simple",
     tagsPerFile = 1,
-    expectedParts = List("Test/part-1.json" -> 1)
+    expectedParts = List(
+      "Tests/part-1.json" -> 1,
+      "Test/part-1.json" -> 1
+    )
   )
   it should behave like conversionTest(
     "convert repeated top-level tags into repeated objects",
     "many-tags",
     tagsPerFile = 1,
-    expectedParts = List("Test/part-1.json" -> 1, "Test/part-2.json" -> 1)
+    expectedParts =
+      List("Tests/part-1.json" -> 1, "Test/part-1.json" -> 1, "Test/part-2.json" -> 1)
   )
   it should behave like conversionTest(
     "support user-specified chunk counts for top-level repeated objects",
     "many-tags",
     tagsPerFile = 2,
-    expectedParts = List("Test/part-1.json" -> 2)
+    expectedParts = List("Tests/part-1.json" -> 1, "Test/part-1.json" -> 2)
   )
   it should behave like conversionTest(
     "terminate if there are fewer tags in the document than the max count",
     "many-tags",
     tagsPerFile = 100,
-    expectedParts = List("Test/part-1.json" -> 2)
+    expectedParts = List("Tests/part-1.json" -> 1, "Test/part-1.json" -> 2)
   )
   it should behave like conversionTest(
     "convert nested tags into nested objects",
     "nested",
     tagsPerFile = 1,
-    expectedParts = List("Test/part-1.json" -> 1)
+    expectedParts = List("Tests/part-1.json" -> 1, "Test/part-1.json" -> 1)
   )
   it should behave like conversionTest(
     "convert repeated nested tags into arrays",
     "nested-repeated",
     tagsPerFile = 1,
-    expectedParts = List("Test/part-1.json" -> 1)
+    expectedParts = List("Tests/part-1.json" -> 1, "Test/part-1.json" -> 1)
   )
   it should behave like conversionTest(
-    "include root-level attributes in top-level objects",
+    "output root-level attributes",
     "root-attributes",
     tagsPerFile = 2,
-    expectedParts = List("Test/part-1.json" -> 2)
-  )
-  it should behave like conversionTest(
-    "not write output if there is no XML to extract",
-    "empty",
-    tagsPerFile = 1,
-    expectedParts = Nil
+    expectedParts = List("Tests/part-1.json" -> 1, "Test/part-1.json" -> 2)
   )
   it should behave like conversionTest(
     "handle multiple top-level tag types in one document",
     "mixed-tags",
     tagsPerFile = 2,
     expectedParts = List(
+      "Tests/part-1.json" -> 1,
       "Test/part-1.json" -> 2,
       "Test2/part-1.json" -> 1,
       "Test/part-2.json" -> 1,
