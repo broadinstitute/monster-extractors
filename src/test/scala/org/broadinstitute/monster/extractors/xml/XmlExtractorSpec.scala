@@ -4,11 +4,13 @@ import better.files.File
 import cats.effect.{Blocker, ContextShift, IO}
 import cats.implicits._
 import io.circe.Json
-import org.scalatest.{EitherValues, FlatSpec, Matchers}
+import org.scalatest.EitherValues
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers
 
 import scala.concurrent.ExecutionContext
 
-class XmlExtractorSpec extends FlatSpec with Matchers with EitherValues {
+class XmlExtractorSpec extends AnyFlatSpec with Matchers with EitherValues {
   behavior of "XmlExtractor"
 
   private implicit val cs: ContextShift[IO] = IO.contextShift(ExecutionContext.global)

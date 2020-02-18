@@ -1,15 +1,15 @@
 val betterFilesVersion = "3.8.0"
-val catsEffectVersion = "2.1.0"
-val circeVersion = "0.12.3"
+val catsEffectVersion = "2.1.1"
+val circeVersion = "0.13.0"
 val declineVersion = "1.0.0"
 val fs2Version = "2.2.2"
 val jettisonVersion = "1.4.0"
 val logbackVersion = "1.2.3"
-val log4CatsVersion = "1.0.0"
-val woodstoxVersion = "6.0.2"
+val log4CatsVersion = "1.0.1"
+val woodstoxVersion = "6.0.3"
 
 // Testing.
-val scalaTestVersion = "3.0.8"
+val scalaTestVersion = "3.1.0"
 
 lazy val `monster-xml-to-json-list` = project
   .in(file("."))
