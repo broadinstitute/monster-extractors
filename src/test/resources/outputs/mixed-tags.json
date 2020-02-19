@@ -1,8 +1,9 @@
-{"Test": {"Tests": {"@xmlns": {"$": "http://www.adatum.com"}}, "@id": "1", "name": {"$": "First tag"}}}
-{"Test": {"Tests": {"@xmlns": {"$": "http://www.adatum.com"}}, "@id": "2", "name": {"$": "Second tag"}}}
-{"Test2": {"Tests": {"@xmlns": {"$": "http://www.adatum.com"}}, "@name": "A", "id": {"$": "123"}}}
-{"Test": {"Tests": {"@xmlns": {"$": "http://www.adatum.com"}}, "@id": "3", "name": {"$": "Third tag"}}}
-{"Test2": {"Tests": {"@xmlns": {"$": "http://www.adatum.com"}}, "@name": "B", "id": {"$": "456"}}}
-{"Test2": {"Tests": {"@xmlns": {"$": "http://www.adatum.com"}}, "@name": "C", "id": {"$": "789"}}}
-{"Test2": {"Tests": {"@xmlns": {"$": "http://www.adatum.com"}}, "@name": "D", "id": {"$": "000"}}}
-{"Test3": {"Tests": {"@xmlns": {"$": "http://www.adatum.com"}}, "@foo": "bar"}}
+{"Tests": {"@xmlns": {"$": "http://www.adatum.com"}}}
+{"Test": {"@id": "1", "name": {"$": "First tag"}}}
+{"Test": {"@id": "2", "name": {"$": "Second tag"}}}
+{"Test2": {"@name": "A", "id": {"$": "123"}}}
+{"Test": {"@id": "3", "name": {"$": "Third tag"}}}
+{"Test2": {"@name": "B", "id": {"$": "456"}}}
+{"Test2": {"@name": "C", "id": {"$": "789"}}}
+{"Test2": {"@name": "D", "id": {"$": "000"}}}
+{"Test3": {"@foo": "bar"}}

@@ -1,2 +1,3 @@
-{"Test": {"Tests": {"@xmlns": {"$": "http://www.adatum.com"}, "@globalProperty": "global", "@otherProperty": "other"}, "@id": "1", "name": {"$": "First tag"}}}
-{"Test": {"Tests": {"@xmlns": {"$": "http://www.adatum.com"}, "@globalProperty": "global", "@otherProperty": "other"}, "@id": "2", "name": {"$": "Second tag"}}}
+{"Tests": {"@xmlns": {"$": "http://www.adatum.com"}, "@globalProperty": "global", "@otherProperty": "other"}}
+{"Test": {"@id": "1", "name": {"$": "First tag"}}}
+{"Test": {"@id": "2", "name": {"$": "Second tag"}}}
