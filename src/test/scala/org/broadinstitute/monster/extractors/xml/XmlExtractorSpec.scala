@@ -31,7 +31,7 @@ class XmlExtractorSpec extends AnyFlatSpec with Matchers with EitherValues {
     filename: String,
     tagsPerFile: Int,
     expectedParts: List[(String, Long)]
-  ): Unit = {
+  ): Unit =
     it should description in {
       val input = File(s"src/test/resources/inputs/$filename.xml")
       val expectedJsons = readJsons(File(s"src/test/resources/outputs/$filename.json"))
@@ -61,7 +61,6 @@ class XmlExtractorSpec extends AnyFlatSpec with Matchers with EitherValues {
         allOutputJsons should contain theSameElementsAs expectedJsons
       }
     }
-  }
 
   it should behave like conversionTest(
     "convert XML to JSON",
@@ -76,8 +75,7 @@ class XmlExtractorSpec extends AnyFlatSpec with Matchers with EitherValues {
     "convert repeated top-level tags into repeated objects",
     "many-tags",
     tagsPerFile = 1,
-    expectedParts =
-      List("Tests/part-1.json" -> 1, "Test/part-1.json" -> 1, "Test/part-2.json" -> 1)
+    expectedParts = List("Tests/part-1.json" -> 1, "Test/part-1.json" -> 1, "Test/part-2.json" -> 1)
   )
   it should behave like conversionTest(
     "support user-specified chunk counts for top-level repeated objects",
