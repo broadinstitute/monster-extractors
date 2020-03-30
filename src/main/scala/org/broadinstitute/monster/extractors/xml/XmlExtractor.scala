@@ -5,11 +5,12 @@ import cats.data._
 import cats.effect.{Blocker, ContextShift, IO}
 import cats.implicits._
 import fs2.{io => _, _}
-import javax.xml.stream.events.XMLEvent
-import com.ctc.wstx.stax.{WstxEventFactory, WstxInputFactory}
+import javax.xml.stream.events.{Namespace, XMLEvent}
+import com.ctc.wstx.stax.WstxInputFactory
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import org.codehaus.jettison.AbstractXMLEventWriter
 import org.codehaus.jettison.badgerfish.BadgerFishXMLStreamWriter
+import org.codehaus.stax2.ri.evt.EndElementEventImpl
 
 import scala.collection.Iterator
 
@@ -21,9 +22,6 @@ import scala.collection.Iterator
   */
 class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShift[IO]) {
   private val log = Slf4jLogger.getLogger[IO]
-
-  /** Helper used to build modified XML events when needed. */
-  private val EventFactory = new WstxEventFactory()
 
   /** Helper used to build XML readers when needed. */
   private val ReaderFactory = new WstxInputFactory()
@@ -79,8 +77,17 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
         // Begin recursive parsing on the element after the root.
         case Some((rootTag, nestedEvents)) =>
           val rootStart = rootTag.asStartElement()
-          val rootEnd =
-            EventFactory.createEndElement(rootStart.getName, rootStart.getNamespaces)
+          /*
+           * This is super gross, but it's the inlined definition of "createEndElement"
+           * in Woodstox's event factory class. Using that method fails to compile in the
+           * GitHub actions environment because of ambiguous overloads. For some reason
+           * the error doesn't reproduce locally...
+           */
+          val rootEnd = new EndElementEventImpl(
+            null,
+            rootStart.getName,
+            rootStart.getNamespaces.asInstanceOf[java.util.Iterator[Namespace]]
+          )
 
           Pull.output1(NonEmptyChain(rootStart, rootEnd)) >>
             collectXmlTags(nestedEvents, Chain.empty, None)
