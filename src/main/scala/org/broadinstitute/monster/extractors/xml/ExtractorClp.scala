@@ -48,9 +48,7 @@ object ExtractorClp
           "Will raise an error if pointed to an existing non-directory.",
         short = "o"
       )
-      .validate("Output is not a directory") { out =>
-        out.notExists || out.isDirectory
-      }
+      .validate("Output is not a directory")(out => out.notExists || out.isDirectory)
 
     val gzipOpt = Opts.flag("gunzip-input", "Gunzip input before extraction").orFalse
 

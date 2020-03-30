@@ -44,7 +44,9 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
     gunzip: Boolean
   ): Stream[IO, File] = {
     val baseBytes = fs2.io.file.readAll[IO](input.path, blocker, 8192)
-    val xml = if (gunzip) baseBytes.through(fs2.compress.gunzip(2 * 8192)) else baseBytes
+    val xml =
+      if (gunzip) baseBytes.through(fs2.compression.gunzip(2 * 8192)).flatMap(_.content)
+      else baseBytes
 
     xml
       .through(parseXmlTags)
