@@ -2,7 +2,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
-  name: {{ .Values.name }}
+  name: {{ .Values.templateName }}
 spec:
   templates:
     - name: main
