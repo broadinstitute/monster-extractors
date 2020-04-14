@@ -9,6 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+      - name: Fetch full git history
+        run: git fetch --prune --unshallow
       - uses: olafurpg/setup-scala@v7
         with:
           java-version: graalvm@20.0.0
