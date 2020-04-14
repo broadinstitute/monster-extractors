@@ -1,0 +1,14 @@
+apiVersion: v1
+entries:
+  xml-to-json-list-template:
+  - apiVersion: v2
+    appVersion: 3.2.2
+    created: "2020-04-14T21:15:47.188446816Z"
+    description: Chart for an Argo template that will run the XML-to-JSON-list tool
+    digest: 7ec949fa4a7c0df0e54a677f486ca90d76d10505f5d7fb098061216c362f48d0
+    name: xml-to-json-list-template
+    type: application
+    urls:
+    - https://github.com/broadinstitute/monster-xml-to-json-list/releases/download/xml-to-json-list-template-3.2.2/xml-to-json-list-template-3.2.2.tgz
+    version: 3.2.2
+generated: "2020-04-14T21:15:47.073615196Z"
