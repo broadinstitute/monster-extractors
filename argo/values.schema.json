@@ -7,5 +7,5 @@
       "type": "string"
     }
   },
-  "required": ["name"]
+  "required": ["templateName"]
 }
