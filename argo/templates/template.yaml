@@ -65,4 +65,4 @@ spec:
             args+=(--gunzip-input)
           fi
 
-          /app/bin/monster-xml-to-json-list ${args[@]}
+          /app/bin/xml-to-json-list-clp ${args[@]}
