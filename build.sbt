@@ -14,6 +14,7 @@ val scalaTestVersion = "3.1.1"
 lazy val `monster-xml-to-json-list` = project
   .in(file("."))
   .aggregate(`xml-to-json-list-clp`, `xml-to-json-list-template`)
+  .settings(publish / skip := true)
 
 lazy val `xml-to-json-list-clp` = project
   .in(file("clp"))
