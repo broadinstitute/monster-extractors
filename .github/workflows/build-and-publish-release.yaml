@@ -23,7 +23,7 @@ jobs:
         run: gcloud auth configure-docker --quiet
       - uses: azure/setup-helm@v1
         with:
-          version: '3.1.2'
+          version: 'v3.1.2'
       - uses: broadinstitute/setup-chart-releaser@v1
         with:
           version: '1.0.0-beta.1'
