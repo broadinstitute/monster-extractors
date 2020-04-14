@@ -3,3 +3,4 @@ target/
 .metals/
 .bloop/
 .scalafmt.conf
+project/metals.sbt

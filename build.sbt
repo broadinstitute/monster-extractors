@@ -1,7 +1,7 @@
 val betterFilesVersion = "3.8.0"
 val catsEffectVersion = "2.1.2"
 val circeVersion = "0.13.0"
-val declineVersion = "1.0.0"
+val declineVersion = "1.2.0"
 val fs2Version = "2.3.0"
 val jettisonVersion = "1.4.1"
 val logbackVersion = "1.2.3"
@@ -13,6 +13,10 @@ val scalaTestVersion = "3.1.1"
 
 lazy val `monster-xml-to-json-list` = project
   .in(file("."))
+  .aggregate(`xml-to-json-list-clp`, `xml-to-json-list-template`)
+
+lazy val `xml-to-json-list-clp` = project
+  .in(file("clp"))
   .enablePlugins(MonsterDockerPlugin)
   .settings(
     // Main code.
@@ -35,3 +39,11 @@ lazy val `monster-xml-to-json-list` = project
       "org.scalatest" %% "scalatest" % scalaTestVersion
     ).map(_ % Test)
   )
+
+  lazy val `xml-to-json-list-template` = project
+    .in(file("argo"))
+    .enablePlugins(MonsterHelmPlugin)
+    .settings(
+      helmChartOrganization := "broadinstitute",
+      helmChartRepository := "monster-xml-to-json-list"
+    )
