@@ -1,0 +1,68 @@
+{{- $version := default "latest" .Chart.AppVersion }}
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: {{ .Values.name }}
+spec:
+  templates:
+    - name: main
+      inputs:
+        parameters:
+          - name: input-pvc-name
+          - name: input-xml-path
+          - name: output-pvc-name
+          - name: objects-per-part
+          - name: gunzip
+          - name: memory-mib
+          - name: cpu-m
+      volumes:
+        - name: in
+          persistentVolumeClaim:
+            claimName: '{{ "{{inputs.parameters.input-pvc-name}}" }}'
+            readOnly: true
+        - name: out
+          persistentVolumeClaim:
+            claimName: '{{ "{{inputs.parameters.output-pvc-name}}" }}'
+      script:
+        image: us.gcr.io/broad-dsp-gcr-public/xml-to-json-list-clp:{{ $version }}
+        volumeMounts:
+          - name: in
+            mountPath: /in
+            readOnly: true
+          - name: out
+            mountPath: /out
+        {{- $mem := "{{inputs.parameters.memory-mib}}" }}
+        {{- $cpu := "{{inputs.parameters.cpu-m}}" }}
+        podSpecPatch: |
+          containers:
+            - name: main
+              resources:
+                requests:
+                  memory: {{ $mem }}Mi
+                  cpu: {{ $cpu }}m
+                limits:
+                  memory: {{ $mem }}Mi
+                  cpu: {{ $cpu }}m
+        env:
+          - name: JAVA_OPTS
+            value: '-Xmx{{ $mem }}m -Xms{{ $mem }}m'
+          - name: INPUT
+            value: {{ "/in/{{inputs.parameters.input-xml-path}}" }}
+          - name: OBJS_PER_PART
+            value: '{{ "{{inputs.parameters.objects-per-part}}" }}'
+          - name: GUNZIP
+            value: '{{ "{{inputs.parameters.gunzip}}" }}'
+        command: [bash]
+        source: |
+          set -euo pipefail
+
+          declare -a args=(
+            --input=${INPUT}
+            --output=/out
+            --objects-per-part=${OBJS_PER_PART}
+          )
+          if [[ "${GUNZIP}" == "true" ]]; then
+            args+=(--gunzip-input)
+          fi
+
+          /app/bin/monster-xml-to-json-list ${args[@]}

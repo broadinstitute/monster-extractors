@@ -6,7 +6,7 @@ import cats.effect.{Blocker, ExitCode, IO}
 import cats.implicits._
 import com.monovore.decline._
 import com.monovore.decline.effect._
-import org.broadinstitute.monster.MonsterXmlToJsonListBuildInfo
+import org.broadinstitute.monster.XmlToJsonListClpBuildInfo
 
 /**
   * Command-line program which can use our extractor functionality to convert
@@ -16,7 +16,7 @@ object ExtractorClp
     extends CommandIOApp(
       name = "xml-extract",
       header = "Mechanically extract XML data into JSON-list",
-      version = MonsterXmlToJsonListBuildInfo.version
+      version = XmlToJsonListClpBuildInfo.version
     ) {
 
   implicit val fileArg: Argument[File] = new Argument[File] {

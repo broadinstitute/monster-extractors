@@ -13,6 +13,10 @@ val scalaTestVersion = "3.1.1"
 
 lazy val `monster-xml-to-json-list` = project
   .in(file("."))
+  .aggregate(`xml-to-json-list-clp`, `xml-to-json-list-template`)
+
+lazy val `xml-to-json-list-clp` = project
+  .in(file("clp"))
   .enablePlugins(MonsterDockerPlugin)
   .settings(
     // Main code.
@@ -35,3 +39,11 @@ lazy val `monster-xml-to-json-list` = project
       "org.scalatest" %% "scalatest" % scalaTestVersion
     ).map(_ % Test)
   )
+
+  lazy val `xml-to-json-list-template` = project
+    .in(file("argo"))
+    .enablePlugins(MonsterHelmPlugin)
+    .settings(
+      helmChartOrganization := "broadinstitute",
+      helmChartRepository := "monster-xml-to-json-list"
+    )
