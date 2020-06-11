@@ -8,6 +8,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+      - name: Fetch tag history
+        run: git fetch --tags
       - uses: olafurpg/setup-scala@v7
         with:
           java-version: graalvm@20.0.0
@@ -16,12 +18,9 @@ jobs:
       - name: Compile
         run: sbt Compile/compile Test/compile
       - name: Test
-        run: sbt "set ThisBuild/coverageEnabled := true" test
-      - name: Aggregate coverage reports
-        run: sbt coverageAggregate
-      - uses: codecov/codecov-action@v1
-      - name: Fetch tag history
-        run: git fetch --depth=1 origin +refs/tags/*:refs/tags/*
+        run: sbt "set ThisBuild/coverageEnabled := true" test coverageAggregate
+      - name: Publish coverage
+        uses: codecov/codecov-action@v1
       - uses: GoogleCloudPlatform/github-actions/setup-gcloud@master
         with:
           version: '286.0.0'
