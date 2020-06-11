@@ -1,3 +1,5 @@
+import _root_.io.circe.Json
+
 val betterFilesVersion = "3.8.0"
 val catsEffectVersion = "2.1.2"
 val circeVersion = "0.13.0"
@@ -46,5 +48,8 @@ lazy val `xml-to-json-list-clp` = project
     .enablePlugins(MonsterHelmPlugin)
     .settings(
       helmChartOrganization := "broadinstitute",
-      helmChartRepository := "monster-xml-to-json-list"
+      helmChartRepository := "monster-xml-to-json-list",
+      helmInjectVersionValues := { (baseValues, version) =>
+        baseValues.deepMerge(Json.obj("version" -> Json.fromString(version)))
+      }
     )

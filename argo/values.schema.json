@@ -5,7 +5,8 @@
     "templateName": {
       "description": "Name to assign to the generated WorkflowTemplate object",
       "type": "string"
-    }
+    },
+    "version": { "type": "string" }
   },
   "required": ["templateName"]
 }

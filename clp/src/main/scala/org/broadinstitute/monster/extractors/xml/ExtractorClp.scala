@@ -6,7 +6,7 @@ import cats.effect.{Blocker, ExitCode, IO}
 import cats.implicits._
 import com.monovore.decline._
 import com.monovore.decline.effect._
-import org.broadinstitute.monster.XmlToJsonListClpBuildInfo
+import org.broadinstitute.monster.buildinfo.XmlToJsonListClpBuildInfo
 
 /**
   * Command-line program which can use our extractor functionality to convert
