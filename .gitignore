@@ -4,3 +4,5 @@ target/
 .bloop/
 .scalafmt.conf
 project/metals.sbt
+Chart.lock
+charts/

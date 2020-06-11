@@ -1,4 +1,4 @@
-{{- $version := default "latest" .Chart.AppVersion }}
+{{- $version := default "latest" .Values.version }}
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
@@ -23,6 +23,18 @@ spec:
         - name: out
           persistentVolumeClaim:
             claimName: '{{ "{{inputs.parameters.output-pvc-name}}" }}'
+      {{- $mem := "{{inputs.parameters.memory-mib}}" }}
+      {{- $cpu := "{{inputs.parameters.cpu-m}}" }}
+      podSpecPatch: |
+        containers:
+          - name: main
+            resources:
+              requests:
+                memory: {{ $mem }}Mi
+                cpu: {{ $cpu }}m
+              limits:
+                memory: {{ $mem }}Mi
+                cpu: {{ $cpu }}m
       script:
         image: us.gcr.io/broad-dsp-gcr-public/xml-to-json-list-clp:{{ $version }}
         volumeMounts:
@@ -31,18 +43,6 @@ spec:
             readOnly: true
           - name: out
             mountPath: /out
-        {{- $mem := "{{inputs.parameters.memory-mib}}" }}
-        {{- $cpu := "{{inputs.parameters.cpu-m}}" }}
-        podSpecPatch: |
-          containers:
-            - name: main
-              resources:
-                requests:
-                  memory: {{ $mem }}Mi
-                  cpu: {{ $cpu }}m
-                limits:
-                  memory: {{ $mem }}Mi
-                  cpu: {{ $cpu }}m
         env:
           - name: JAVA_OPTS
             value: '-Xmx{{ $mem }}m -Xms{{ $mem }}m'
