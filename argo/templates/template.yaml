@@ -65,6 +65,9 @@ spec:
             args+=(--gunzip-input)
           fi
 
+          # Clear the output dir to avoid corrupted outputs.
+          rm -rf /out/*
+
           # Prevent the heap from consuming all of the pod's memory.
           declare -r java_mem=$(((${MEM_GIB} - 1)))
           export JAVA_OPTS="-Xmx${java_mem}g -Xms${java_mem}g"
