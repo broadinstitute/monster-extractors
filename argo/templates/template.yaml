@@ -44,8 +44,8 @@ spec:
           - name: out
             mountPath: /out
         env:
-          - name: JAVA_OPTS
-            value: '-Xmx{{ $mem }}m -Xms{{ $mem }}m'
+          - name: MEM_MIB
+            value: {{ $mem | quote }}
           - name: INPUT
             value: {{ "/in/{{inputs.parameters.input-xml-path}}" }}
           - name: OBJS_PER_PART
@@ -65,4 +65,10 @@ spec:
             args+=(--gunzip-input)
           fi
 
+          # Clear the output dir to avoid corrupted outputs.
+          rm -rf /out/*
+
+          # Prevent the heap from consuming all of the pod's memory.
+          declare -r java_mem=$(((${MEM_MIB} - 1024)))
+          export JAVA_OPTS="-Xmx${java_mem}m -Xms${java_mem}m"
           /app/bin/xml-to-json-list-clp ${args[@]}
