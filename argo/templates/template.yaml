@@ -13,7 +13,7 @@ spec:
           - name: output-pvc-name
           - name: objects-per-part
           - name: gunzip
-          - name: memory-gib
+          - name: memory-mib
           - name: cpu-m
       volumes:
         - name: in
@@ -23,17 +23,17 @@ spec:
         - name: out
           persistentVolumeClaim:
             claimName: '{{ "{{inputs.parameters.output-pvc-name}}" }}'
-      {{- $mem := "{{inputs.parameters.memory-gib}}" }}
+      {{- $mem := "{{inputs.parameters.memory-mib}}" }}
       {{- $cpu := "{{inputs.parameters.cpu-m}}" }}
       podSpecPatch: |
         containers:
           - name: main
             resources:
               requests:
-                memory: {{ $mem }}Gi
+                memory: {{ $mem }}Mi
                 cpu: {{ $cpu }}m
               limits:
-                memory: {{ $mem }}Gi
+                memory: {{ $mem }}Mi
                 cpu: {{ $cpu }}m
       script:
         image: us.gcr.io/broad-dsp-gcr-public/xml-to-json-list-clp:{{ $version }}
@@ -44,7 +44,7 @@ spec:
           - name: out
             mountPath: /out
         env:
-          - name: MEM_GIB
+          - name: MEM_MIB
             value: {{ $mem | quote }}
           - name: INPUT
             value: {{ "/in/{{inputs.parameters.input-xml-path}}" }}
@@ -69,6 +69,6 @@ spec:
           rm -rf /out/*
 
           # Prevent the heap from consuming all of the pod's memory.
-          declare -r java_mem=$(((${MEM_GIB} - 1)))
-          export JAVA_OPTS="-Xmx${java_mem}g -Xms${java_mem}g"
+          declare -r java_mem=$(((${MEM_MIB} - 1024)))
+          export JAVA_OPTS="-Xmx${java_mem}m -Xms${java_mem}m"
           /app/bin/xml-to-json-list-clp ${args[@]}
