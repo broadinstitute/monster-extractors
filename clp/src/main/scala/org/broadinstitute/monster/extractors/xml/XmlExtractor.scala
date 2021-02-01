@@ -4,7 +4,9 @@ import better.files._
 import cats.data._
 import cats.effect.{Blocker, ContextShift, IO}
 import cats.implicits._
+import com.ctc.wstx.api.WstxInputProperties
 import fs2.{io => _, _}
+
 import javax.xml.stream.events.{Namespace, XMLEvent}
 import com.ctc.wstx.stax.WstxInputFactory
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
@@ -26,6 +28,8 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
   /** Helper used to build XML readers when needed. */
   private val ReaderFactory = new WstxInputFactory()
 
+  private val MaxXmlAttributeSize = 1048576
+
   /**
     * Extract an XML payload into a collection of JSON-list parts,
     * batching output JSON according to top-level tag and a max count.
@@ -41,6 +45,7 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
     tagsPerFile: Int,
     gunzip: Boolean
   ): Stream[IO, File] = {
+    ReaderFactory.setProperty(WstxInputProperties.P_MAX_ATTRIBUTE_SIZE, MaxXmlAttributeSize)
     val baseBytes = fs2.io.file.readAll[IO](input.path, blocker, 8192)
     val xml =
       if (gunzip) baseBytes.through(fs2.compression.gunzip(2 * 8192)).flatMap(_.content)
