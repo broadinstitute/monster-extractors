@@ -28,6 +28,8 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
   /** Helper used to build XML readers when needed. */
   private val ReaderFactory = new WstxInputFactory()
 
+  // the default limit is 524288, which we are running into
+  // this bumps it by a factor of 2
   private val MaxXmlAttributeSize = 1048576
 
   /**
