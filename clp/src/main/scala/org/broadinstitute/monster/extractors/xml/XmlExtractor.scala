@@ -146,10 +146,12 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
           // Accumulating events under a tag.
           case Some(xmlTag) =>
             val newAccumulator = eventsAccumulated.append(xmlEvent)
-            if (xmlEvent.isEndElement && xmlEvent
-                  .asEndElement()
-                  .getName
-                  .getLocalPart == xmlTag) {
+            if (
+              xmlEvent.isEndElement && xmlEvent
+                .asEndElement()
+                .getName
+                .getLocalPart == xmlTag
+            ) {
               // End of the accumulated tag. Output anything we've collected and
               // recur with an empty accumulator.
               val outputIfNonEmpty = NonEmptyChain
