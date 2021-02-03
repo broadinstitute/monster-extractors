@@ -14,6 +14,7 @@ import org.codehaus.jettison.AbstractXMLEventWriter
 import org.codehaus.jettison.badgerfish.BadgerFishXMLStreamWriter
 import org.codehaus.stax2.ri.evt.EndElementEventImpl
 
+import javax.xml.stream.XMLStreamException
 import scala.collection.Iterator
 
 /**
@@ -29,8 +30,8 @@ class XmlExtractor private[xml] (blocker: Blocker)(implicit context: ContextShif
   private val ReaderFactory = new WstxInputFactory()
 
   // the default limit is 524288, which we are running into
-  // this bumps it by a factor of 2
-  private val MaxXmlAttributeSize = 1048576
+  // this bumps it to what the max we have observed + some cushiontemplates/terraform/k8s-node-pool/main.tf
+  private val MaxXmlAttributeSize = 4000000
 
   /**
     * Extract an XML payload into a collection of JSON-list parts,
